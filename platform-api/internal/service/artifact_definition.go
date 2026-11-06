@@ -102,13 +102,14 @@ func (d ArtifactDefinitions) For(kind string) (ArtifactDefinition, error) {
 
 // restAPIDefinition renders REST APIs.
 type restAPIDefinition struct {
-	apiRepo repository.APIRepository
-	apiUtil *utils.APIUtil
+	apiRepo     repository.APIRepository
+	apiUtil     *utils.APIUtil
+	projectRepo repository.ProjectRepository
 }
 
 // NewRestAPIDefinition returns the ArtifactDefinition for REST APIs.
-func NewRestAPIDefinition(apiRepo repository.APIRepository, apiUtil *utils.APIUtil) ArtifactDefinition {
-	return &restAPIDefinition{apiRepo: apiRepo, apiUtil: apiUtil}
+func NewRestAPIDefinition(apiRepo repository.APIRepository, apiUtil *utils.APIUtil, projectRepo repository.ProjectRepository) ArtifactDefinition {
+	return &restAPIDefinition{apiRepo: apiRepo, apiUtil: apiUtil, projectRepo: projectRepo}
 }
 
 func (d *restAPIDefinition) Kind() string { return constants.RestApi }
@@ -121,7 +122,14 @@ func (d *restAPIDefinition) Current(artifact *model.Artifact) (*ArtifactSnapshot
 	if apiModel == nil {
 		return nil, apperror.RESTAPINotFound.New()
 	}
-	definition, err := d.apiUtil.BuildAPIDeploymentYAML(apiModel)
+	project, err := d.projectRepo.GetProjectByUUIDAndOrgID(apiModel.ProjectID, artifact.OrganizationUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve project for REST API %s: %w", apiModel.ID, err)
+	}
+	if project == nil {
+		return nil, apperror.ProjectNotFound.New()
+	}
+	definition, err := d.apiUtil.BuildAPIDeploymentYAML(apiModel, project.Handle)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build API deployment YAML: %w", err)
 	}
@@ -334,13 +342,14 @@ func (d *mcpProxyDefinition) Decode(content []byte) (any, error) {
 // control-plane kind (AgentProxy); what it renders is the gateway's kind: Agent
 // document.
 type agentProxyDefinition struct {
-	proxyRepo  repository.AgentProxyRepository
-	agentUtils *utils.AgentProxyUtils
+	proxyRepo   repository.AgentProxyRepository
+	agentUtils  *utils.AgentProxyUtils
+	projectRepo repository.ProjectRepository
 }
 
 // NewAgentProxyDefinition returns the ArtifactDefinition for Agent proxies.
-func NewAgentProxyDefinition(proxyRepo repository.AgentProxyRepository, agentUtils *utils.AgentProxyUtils) ArtifactDefinition {
-	return &agentProxyDefinition{proxyRepo: proxyRepo, agentUtils: agentUtils}
+func NewAgentProxyDefinition(proxyRepo repository.AgentProxyRepository, agentUtils *utils.AgentProxyUtils, projectRepo repository.ProjectRepository) ArtifactDefinition {
+	return &agentProxyDefinition{proxyRepo: proxyRepo, agentUtils: agentUtils, projectRepo: projectRepo}
 }
 
 func (d *agentProxyDefinition) Kind() string { return constants.AgentProxy }
@@ -355,7 +364,14 @@ func (d *agentProxyDefinition) Current(artifact *model.Artifact) (*ArtifactSnaps
 	if proxy == nil {
 		return nil, apperror.AgentProxyNotFound.New()
 	}
-	definition, err := d.agentUtils.BuildAgentProxyDeploymentYAML(proxy)
+	project, err := d.projectRepo.GetProjectByUUIDAndOrgID(proxy.ProjectUUID, artifact.OrganizationUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve agent proxy project: %w", err)
+	}
+	if project == nil {
+		return nil, apperror.ProjectNotFound.New()
+	}
+	definition, err := d.agentUtils.BuildAgentProxyDeploymentYAML(proxy, project.Handle)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Agent proxy deployment YAML: %w", err)
 	}

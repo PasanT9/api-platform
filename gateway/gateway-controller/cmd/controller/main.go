@@ -795,6 +795,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Rebuild active budgets from durable SQL before the first policy-engine snapshot.
+	if budgetStore, ok := db.(storage.BudgetStorage); ok {
+		budgets, err := budgetStore.ListBudgets()
+		if err != nil {
+			log.Error("Failed to reload budgets from database", slog.Any("error", err))
+			os.Exit(1)
+		}
+		for _, budget := range budgets {
+			if budget.Status == "active" {
+				lazyResourceStore.Store(utils.BudgetLazyResource(budget))
+			}
+		}
+	}
+
 	// Ensure initial lazy resource snapshot includes default templates loaded from files.
 	// At this point, the API server initialization has already persisted/published OOB templates.
 	if lazyResourceStore.Count() > 0 {
@@ -1185,9 +1199,21 @@ func generateAuthConfig(config *config.Config) (commonmodels.AuthConfig, error) 
 		httpClient = client
 	}
 	authConfig := commonmodels.AuthConfig{BasicAuth: &basicAuth,
-		JWTConfig:     &idpAuth,
-		ResourceRoles: DefaultResourceRoles,
-		HTTPClient:    httpClient,
+		JWTConfig:       &idpAuth,
+		ResourceRoles:   DefaultResourceRoles,
+		BasicRoleScopes: map[string][]string{"admin": {"ap:budget:manage"}},
+		HTTPClient:      httpClient,
+	}
+	authConfig.ResourceScopes = make(map[string][]string)
+	for route, scopes := range map[string][]string{
+		"POST /budgets":        {"ap:budget:create", "ap:budget:manage"},
+		"GET /budgets":         {"ap:budget:read", "ap:budget:manage"},
+		"GET /budgets/{id}":    {"ap:budget:read", "ap:budget:manage"},
+		"PUT /budgets/{id}":    {"ap:budget:update", "ap:budget:manage"},
+		"DELETE /budgets/{id}": {"ap:budget:delete", "ap:budget:manage"},
+	} {
+		authConfig.ResourceScopes[route] = scopes
+		authConfig.ResourceScopes[prefixed(route)] = scopes
 	}
 	return authConfig, nil
 }

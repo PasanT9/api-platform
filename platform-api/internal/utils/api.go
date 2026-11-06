@@ -468,7 +468,7 @@ func (u *APIUtil) upstreamAuthToAPI(auth *model.UpstreamAuth) *api.UpstreamAuth 
 }
 
 // BuildAPIDeploymentYAML builds the deployment YAML struct from API model without marshalling
-func (u *APIUtil) BuildAPIDeploymentYAML(apiModel *model.API) (*dto.APIDeploymentYAML, error) {
+func (u *APIUtil) BuildAPIDeploymentYAML(apiModel *model.API, projectHandle string) (*dto.APIDeploymentYAML, error) {
 	operationList := make([]api.OperationRequest, 0)
 	for i, op := range apiModel.Configuration.Operations {
 		if op.Request == nil {
@@ -546,10 +546,10 @@ func (u *APIUtil) BuildAPIDeploymentYAML(apiModel *model.API) (*dto.APIDeploymen
 		Metadata: dto.DeploymentMetadata{
 			Name: apiModel.Handle,
 			Annotations: map[string]string{
-				commonconstants.AnnotationProjectID: apiModel.ProjectID,
+				commonconstants.AnnotationProjectID: projectHandle,
 			},
 			Labels: map[string]string{
-				commonconstants.DeprecatedLabelProjectID: apiModel.ProjectID,
+				commonconstants.DeprecatedLabelProjectID: projectHandle,
 			},
 		},
 		Spec: apiYAMLData,
@@ -557,8 +557,8 @@ func (u *APIUtil) BuildAPIDeploymentYAML(apiModel *model.API) (*dto.APIDeploymen
 }
 
 // GenerateAPIDeploymentYAML creates the deployment YAML from API model
-func (u *APIUtil) GenerateAPIDeploymentYAML(apiModel *model.API) (string, error) {
-	apiDeployment, err := u.BuildAPIDeploymentYAML(apiModel)
+func (u *APIUtil) GenerateAPIDeploymentYAML(apiModel *model.API, projectHandle string) (string, error) {
+	apiDeployment, err := u.BuildAPIDeploymentYAML(apiModel, projectHandle)
 	if err != nil {
 		return "", err
 	}

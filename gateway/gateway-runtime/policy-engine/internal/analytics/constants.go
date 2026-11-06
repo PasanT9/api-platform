@@ -18,6 +18,21 @@
 package analytics
 
 const (
+	// BudgetMatchesMetadataKey carries the final request match set to access-log analytics.
+	BudgetMatchesMetadataKey = "budget_matches"
+	// BudgetBlockedMetadataKey lists the handles of the budgets that refused the request.
+	BudgetBlockedMetadataKey = "budget_blocked"
+	// BudgetCrossingsMetadataKey lists "<handle>|<allowance>|<percent>" thresholds the
+	// request's cost crossed (warning thresholds and 100%).
+	BudgetCrossingsMetadataKey = "budget_crossings"
+	// APIKeyIdentityMetadataKey carries the validated API key's name and owner.
+	APIKeyIdentityMetadataKey = "api_key_identity"
+	// APIKeyPropertyKey is the event property (and Moesif metadata field) for it.
+	APIKeyPropertyKey = "apiKey"
+	// LLMCostStatusMetadataKey carries llm-cost's "calculated"/"not_calculated" status,
+	// which llm-cost writes only to SharedContext, so analytics can tell a zero price
+	// from an unpriced model.
+	LLMCostStatusMetadataKey = "x-llm-cost-status"
 	// UpstreamSuccessResponseDetail is used to indicate a successful response from the upstream server.
 	UpstreamSuccessResponseDetail = "via_upstream"
 	// ExtAuthDeniedResponseDetail indicates that the external authorization request was denied.

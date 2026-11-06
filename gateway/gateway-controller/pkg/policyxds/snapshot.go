@@ -399,6 +399,9 @@ func (t *Translator) createRouteConfigResource(
 	if rdc.Metadata.LLM != nil {
 		metadataMap["template_handle"] = rdc.Metadata.LLM.TemplateHandle
 		metadataMap["provider_name"] = rdc.Metadata.LLM.ProviderName
+		metadataMap["primary_provider_uuid"] = rdc.Metadata.LLM.PrimaryProviderUUID
+		metadataMap["provider_uuid_by_upstream"] = rdc.Metadata.LLM.ProviderUUIDByUpstream
+		metadataMap["provider_handle_by_upstream"] = rdc.Metadata.LLM.ProviderHandleByUpstream
 	}
 
 	data := map[string]interface{}{

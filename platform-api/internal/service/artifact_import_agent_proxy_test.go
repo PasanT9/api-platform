@@ -422,7 +422,7 @@ func TestAgentImport_InverseOfDeploymentBuilder(t *testing.T) {
 				t.Fatalf("GetByHandle = (%v, %v)", proxy, err)
 			}
 
-			built, err := (&utils.AgentProxyUtils{}).BuildAgentProxyDeploymentYAML(proxy)
+			built, err := (&utils.AgentProxyUtils{}).BuildAgentProxyDeploymentYAML(proxy, "test-project")
 			if err != nil {
 				t.Fatalf("BuildAgentProxyDeploymentYAML: %v", err)
 			}

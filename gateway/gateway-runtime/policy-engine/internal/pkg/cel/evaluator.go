@@ -85,6 +85,10 @@ func createCELEnv() (*cel.Env, error) {
 		cel.Variable("request.Method", cel.StringType),
 		cel.Variable("request.RequestID", cel.StringType),
 		cel.Variable("request.Metadata", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("request.Auth", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("request.Auth.Claims", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("request.Auth.Subject", cel.StringType),
+		cel.Variable("request.Auth.Type", cel.StringType),
 		// ResponseContext variables
 		cel.Variable("response", cel.ObjectType("ResponseContext")),
 		cel.Variable("response.RequestHeaders", cel.MapType(cel.StringType, cel.ListType(cel.StringType))),
@@ -260,7 +264,7 @@ func bodyToCEL(body *policy.Body) interface{} {
 // buildRequestHeaderEvalCtx builds a CEL evaluation context from a RequestHeaderContext
 func buildRequestHeaderEvalCtx(ctx *policy.RequestHeaderContext, phase string) map[string]interface{} {
 	headers := ctx.Headers.GetAll()
-	return withFaultVars(map[string]interface{}{
+	return withAuthVars(withFaultVars(map[string]interface{}{
 		"processing.phase": phase,
 		"request": map[string]interface{}{
 			"Headers":   headers,
@@ -296,14 +300,14 @@ func buildRequestHeaderEvalCtx(ctx *policy.RequestHeaderContext, phase string) m
 		"response.ResponseStatus":  0,
 		"response.RequestID":       ctx.RequestID,
 		"response.Metadata":        ctx.Metadata,
-	}, nil)
+	}, nil), ctx.SharedContext)
 }
 
 // buildRequestBodyEvalCtx builds a CEL evaluation context from a RequestContext
 func buildRequestBodyEvalCtx(ctx *policy.RequestContext, phase string) map[string]interface{} {
 	headers := ctx.Headers.GetAll()
 	body := bodyToCEL(ctx.Body)
-	return withFaultVars(map[string]interface{}{
+	return withAuthVars(withFaultVars(map[string]interface{}{
 		"processing.phase": phase,
 		"request": map[string]interface{}{
 			"Headers":   headers,
@@ -339,7 +343,7 @@ func buildRequestBodyEvalCtx(ctx *policy.RequestContext, phase string) map[strin
 		"response.ResponseStatus":  0,
 		"response.RequestID":       ctx.RequestID,
 		"response.Metadata":        ctx.Metadata,
-	}, nil)
+	}, nil), ctx.SharedContext)
 }
 
 // buildResponseHeaderEvalCtx builds a CEL evaluation context from a ResponseHeaderContext
@@ -347,7 +351,7 @@ func buildResponseHeaderEvalCtx(ctx *policy.ResponseHeaderContext, phase string)
 	requestHeaders := ctx.RequestHeaders.GetAll()
 	requestBody := bodyToCEL(ctx.RequestBody)
 	responseHeaders := ctx.ResponseHeaders.GetAll()
-	return withFaultVars(map[string]interface{}{
+	return withAuthVars(withFaultVars(map[string]interface{}{
 		"processing.phase": phase,
 		"request": map[string]interface{}{
 			"Headers":   requestHeaders,
@@ -383,7 +387,7 @@ func buildResponseHeaderEvalCtx(ctx *policy.ResponseHeaderContext, phase string)
 		"response.ResponseStatus":  ctx.ResponseStatus,
 		"response.RequestID":       ctx.RequestID,
 		"response.Metadata":        ctx.Metadata,
-	}, nil)
+	}, nil), ctx.SharedContext)
 }
 
 // buildResponseBodyEvalCtx builds a CEL evaluation context from a ResponseContext
@@ -392,7 +396,7 @@ func buildResponseBodyEvalCtx(ctx *policy.ResponseContext, phase string) map[str
 	requestBody := bodyToCEL(ctx.RequestBody)
 	responseHeaders := ctx.ResponseHeaders.GetAll()
 	responseBody := bodyToCEL(ctx.ResponseBody)
-	return withFaultVars(map[string]interface{}{
+	return withAuthVars(withFaultVars(map[string]interface{}{
 		"processing.phase": phase,
 		"request": map[string]interface{}{
 			"Headers":   requestHeaders,
@@ -428,7 +432,7 @@ func buildResponseBodyEvalCtx(ctx *policy.ResponseContext, phase string) map[str
 		"response.ResponseStatus":  ctx.ResponseStatus,
 		"response.RequestID":       ctx.RequestID,
 		"response.Metadata":        ctx.Metadata,
-	}, nil)
+	}, nil), ctx.SharedContext)
 }
 
 // buildErrorEvalCtx builds a CEL evaluation context from an FaultContext.
@@ -461,7 +465,7 @@ func buildErrorEvalCtx(ctx *policy.FaultContext) map[string]interface{} {
 		metadata = ctx.Metadata
 		requestID = ctx.RequestID
 	}
-	return withFaultVars(map[string]interface{}{
+	return withAuthVars(withFaultVars(map[string]interface{}{
 		"processing.phase": "response_body",
 		"request": map[string]interface{}{
 			"Headers":   requestHeaders,
@@ -497,14 +501,14 @@ func buildErrorEvalCtx(ctx *policy.FaultContext) map[string]interface{} {
 		"response.ResponseStatus":  ctx.ResponseStatus,
 		"response.RequestID":       requestID,
 		"response.Metadata":        metadata,
-	}, ctx)
+	}, ctx), ctx.SharedContext)
 }
 
 // buildStreamingRequestEvalCtx builds a CEL evaluation context from a RequestStreamContext.
 // Uses phase "request_body" — consistent with buffered request body processing.
 func buildStreamingRequestEvalCtx(ctx *policy.RequestStreamContext) map[string]interface{} {
 	headers := ctx.Headers.GetAll()
-	return withFaultVars(map[string]interface{}{
+	return withAuthVars(withFaultVars(map[string]interface{}{
 		"processing.phase": "request_body",
 		"request": map[string]interface{}{
 			"Headers":   headers,
@@ -540,7 +544,7 @@ func buildStreamingRequestEvalCtx(ctx *policy.RequestStreamContext) map[string]i
 		"response.ResponseStatus":  0,
 		"response.RequestID":       ctx.RequestID,
 		"response.Metadata":        ctx.Metadata,
-	}, nil)
+	}, nil), ctx.SharedContext)
 }
 
 // buildStreamingResponseEvalCtx builds a CEL evaluation context from a ResponseStreamContext.
@@ -549,7 +553,7 @@ func buildStreamingResponseEvalCtx(ctx *policy.ResponseStreamContext) map[string
 	requestHeaders := ctx.RequestHeaders.GetAll()
 	requestBody := bodyToCEL(ctx.RequestBody)
 	responseHeaders := ctx.ResponseHeaders.GetAll()
-	return withFaultVars(map[string]interface{}{
+	return withAuthVars(withFaultVars(map[string]interface{}{
 		"processing.phase": "response_body",
 		"request": map[string]interface{}{
 			"Headers":   requestHeaders,
@@ -585,7 +589,7 @@ func buildStreamingResponseEvalCtx(ctx *policy.ResponseStreamContext) map[string
 		"response.ResponseStatus":  ctx.ResponseStatus,
 		"response.RequestID":       ctx.RequestID,
 		"response.Metadata":        ctx.Metadata,
-	}, nil)
+	}, nil), ctx.SharedContext)
 }
 
 // eval evaluates a compiled program against an evaluation context

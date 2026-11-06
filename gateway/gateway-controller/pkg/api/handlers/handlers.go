@@ -80,6 +80,7 @@ type APIServer struct {
 	httpClient                  *http.Client
 	systemConfig                *config.Config
 	eventHub                    eventhub.EventHub
+	lazyResourceManager         *lazyresourcexds.LazyResourceStateManager
 	gatewayID                   string
 	subscriptionSnapshotUpdater utils.SubscriptionSnapshotUpdater
 	subscriptionResourceService *utils.SubscriptionResourceService
@@ -173,6 +174,7 @@ func NewAPIServer(
 		httpClient:                  httpClient,
 		systemConfig:                systemConfig,
 		eventHub:                    eventHub,
+		lazyResourceManager:         lazyResourceManager,
 		gatewayID:                   gatewayID,
 		subscriptionSnapshotUpdater: subscriptionSnapshotUpdater,
 		subscriptionResourceService: subscriptionResourceService,

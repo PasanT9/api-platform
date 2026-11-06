@@ -2031,6 +2031,7 @@ func TestTranslator_CreateExtProcFilter(t *testing.T) {
 
 		want := []string{
 			constants.ExtProcRequestAttributeRouteName,
+			"source.address",
 			constants.ExtProcRequestAttributeConnectionMTLS,
 			constants.ExtProcRequestAttributeConnectionPeerCertificate,
 			constants.ExtProcRequestAttributeConnectionPeerCertificateDigest,

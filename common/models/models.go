@@ -51,6 +51,11 @@ type AuthConfig struct {
 	// ResourceRoles holds the mapping of resource -> allowed local roles.
 	// Keys may be either "METHOD /path" (preferred) or just "/path".
 	ResourceRoles map[string][]string `json:"resource_roles"`
+	// ResourceScopes is checked before ResourceRoles for routes requiring
+	// action-specific scopes. Any one listed scope grants access.
+	ResourceScopes map[string][]string `json:"resource_scopes"`
+	// BasicRoleScopes expands verified Basic Auth roles into effective scopes.
+	BasicRoleScopes map[string][]string `json:"basic_role_scopes"`
 	// HTTPClient is the HTTP client to use for JWKS fetching and other HTTP requests.
 	HTTPClient *http.Client
 }

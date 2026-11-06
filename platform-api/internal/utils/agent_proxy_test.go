@@ -326,7 +326,7 @@ func TestAgentProxyDeploymentYAMLGolden(t *testing.T) {
 	util := &AgentProxyUtils{}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := util.GenerateAgentProxyDeploymentYAML(agentProxyFromRequest(t, tc.handle, tc.body))
+			got, err := util.GenerateAgentProxyDeploymentYAML(agentProxyFromRequest(t, tc.handle, tc.body), "test-project")
 			require.NoError(t, err)
 
 			golden := filepath.Join("testdata", "agent_proxy", tc.name+".yaml")
@@ -345,7 +345,7 @@ func TestAgentProxyDeploymentYAMLGolden(t *testing.T) {
 // assertions are about the emitted document rather than the Go structs.
 func renderAgentYAMLTree(t *testing.T, proxy *model.AgentProxy) map[string]any {
 	t.Helper()
-	out, err := (&AgentProxyUtils{}).GenerateAgentProxyDeploymentYAML(proxy)
+	out, err := (&AgentProxyUtils{}).GenerateAgentProxyDeploymentYAML(proxy, "test-project")
 	require.NoError(t, err)
 	var tree map[string]any
 	require.NoError(t, yaml.Unmarshal([]byte(out), &tree))
@@ -370,7 +370,8 @@ func TestBuildAgentProxyDeploymentYAML_GatewayEnvelope(t *testing.T) {
 	assert.Equal(t, "Agent", tree["kind"], "the gateway artifact kind is Agent, never the CP kind")
 	metadata := mapAt(t, tree, "metadata")
 	assert.Equal(t, "weather-agent", metadata["name"])
-	assert.Equal(t, map[string]any{"projectId": agentProxyTestProjectUUID}, metadata["labels"])
+	assert.Equal(t, map[string]any{"project-id": "test-project"}, metadata["labels"])
+	assert.Equal(t, map[string]any{"gateway.api-platform.wso2.com/project-id": "test-project"}, metadata["annotations"])
 
 	spec := mapAt(t, tree, "spec")
 	assert.Equal(t, "Weather Agent", spec["displayName"])
@@ -546,7 +547,7 @@ func TestBuildAgentProxyDeploymentYAML_OmittedPublicBlockWithProtected(t *testin
 func TestBuildAgentProxyDeploymentYAML_RejectsInconsistentModels(t *testing.T) {
 	util := &AgentProxyUtils{}
 
-	_, err := util.BuildAgentProxyDeploymentYAML(nil)
+	_, err := util.BuildAgentProxyDeploymentYAML(nil, "")
 	assert.Error(t, err)
 
 	cases := map[string]func(p *model.AgentProxy){
@@ -560,7 +561,7 @@ func TestBuildAgentProxyDeploymentYAML_RejectsInconsistentModels(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			proxy := agentProxyFromRequest(t, "weather-agent", agentProxyMinimalRequest)
 			mutate(proxy)
-			d, err := util.BuildAgentProxyDeploymentYAML(proxy)
+			d, err := util.BuildAgentProxyDeploymentYAML(proxy, "test-project")
 			assert.Error(t, err)
 			assert.Nil(t, d)
 		})

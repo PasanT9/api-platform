@@ -968,6 +968,9 @@ func (s *ExternalProcessorServer) newBoundExecutionContext(
 	ec.upstreamBasePath = routeMetadata.UpstreamBasePath
 	ec.apiContext = routeMetadata.Context
 	ec.upstreamDefinitionPaths = routeMetadata.UpstreamDefinitionPaths
+	ec.providerUUIDByUpstream = routeMetadata.ProviderUUIDByUpstream
+	ec.providerHandleByUpstream = routeMetadata.ProviderHandleByUpstream
+	ec.primaryProviderUUID = routeMetadata.PrimaryProviderUUID
 	ec.defaultUpstream = routeMetadata.DefaultUpstream
 	ec.buildRequestContexts(req.GetRequestHeaders(), routeMetadata)
 
@@ -976,6 +979,9 @@ func (s *ExternalProcessorServer) newBoundExecutionContext(
 	// so setting TLS once covers the response phase too.
 	if ec.requestHeaderCtx != nil && ec.requestHeaderCtx.Downstream != nil {
 		ec.requestHeaderCtx.Downstream.TLS = extractDownstreamTLS(req.Attributes)
+	}
+	if attrs, ok := req.Attributes[constants.ExtProcFilter]; ok && attrs != nil {
+		ec.directRemoteAddress = attrs.Fields["source.address"].GetStringValue()
 	}
 	return ec
 }
@@ -1099,20 +1105,24 @@ func (s *ExternalProcessorServer) skipAllProcessing(routeMetadata RouteMetadata)
 
 // RouteMetadata contains metadata about the route
 type RouteMetadata struct {
-	RouteName               string
-	APIId                   string
-	APIName                 string
-	APIVersion              string
-	Context                 string
-	OperationPath           string
-	Vhost                   string
-	APIKind                 string
-	TemplateHandle          string
-	ProviderName            string
-	ProjectID               string
-	DefaultUpstreamCluster  string            // Default cluster for dynamic cluster routing
-	UpstreamBasePath        string            // Base path for the upstream (e.g., /anything)
-	UpstreamDefinitionPaths map[string]string // Maps upstream definition names to their URL base paths
+	RouteName                string
+	APIHandle                string
+	APIId                    string
+	APIName                  string
+	APIVersion               string
+	Context                  string
+	OperationPath            string
+	Vhost                    string
+	APIKind                  string
+	TemplateHandle           string
+	ProviderName             string
+	PrimaryProviderUUID      string
+	ProviderUUIDByUpstream   map[string]string
+	ProviderHandleByUpstream map[string]string
+	ProjectID                string
+	DefaultUpstreamCluster   string            // Default cluster for dynamic cluster routing
+	UpstreamBasePath         string            // Base path for the upstream (e.g., /anything)
+	UpstreamDefinitionPaths  map[string]string // Maps upstream definition names to their URL base paths
 
 	// DefaultUpstream is this route's own compiled-in upstream (cluster name, URL, base
 	// path) — whichever slot it belongs to (main or sandbox). Always present; surfaced

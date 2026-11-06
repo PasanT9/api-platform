@@ -549,6 +549,24 @@ func (c *Analytics) prepareAnalyticEvent(logEntry *v3.HTTPAccessLogEntry) *dto.E
 	event.ProxyResponseCode = int(logEntry.GetResponse().GetResponseCode().GetValue())
 	event.RequestTimestamp = logEntry.GetCommonProperties().GetStartTime().AsTime()
 	event.Properties = make(map[string]interface{}, 0)
+	if extendedAPI.APIType == string(policy.APIKindLlmProxy) || extendedAPI.APIType == string(policy.APIKindLlmProvider) {
+		_, hasPrompt := keyValuePairsFromMetadata[PromptTokenCountMetadataKey]
+		_, hasCompletion := keyValuePairsFromMetadata[CompletionTokenCountMetadataKey]
+		budget := budgetRequestMetadata(
+			keyValuePairsFromMetadata[BudgetMatchesMetadataKey],
+			keyValuePairsFromMetadata[constants.LLMCostMetadataKey],
+			keyValuePairsFromMetadata[LLMCostStatusMetadataKey], hasPrompt || hasCompletion)
+		addBudgetOutcome(budget, keyValuePairsFromMetadata[BudgetBlockedMetadataKey],
+			keyValuePairsFromMetadata[BudgetCrossingsMetadataKey])
+		event.Properties["budget"] = budget
+	}
+	// Validated API key identity, for any API kind: who called, not which budget.
+	if raw := keyValuePairsFromMetadata[APIKeyIdentityMetadataKey]; raw != "" {
+		var apiKey map[string]string
+		if err := json.Unmarshal([]byte(raw), &apiKey); err == nil && apiKey["name"] != "" {
+			event.Properties[APIKeyPropertyKey] = apiKey
+		}
+	}
 
 	// Set user ID from metadata if available (for analytics/Moesif integration)
 	if userID, exists := keyValuePairsFromMetadata[UserIDMetadataKey]; exists && userID != "" {

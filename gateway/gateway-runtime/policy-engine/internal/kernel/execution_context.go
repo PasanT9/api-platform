@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	extprocconfigv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -168,7 +169,17 @@ type PolicyExecutionContext struct {
 
 	// Maps upstream definition names to their URL paths.
 	// Used when UpstreamName is set to compute the correct path transformation.
-	upstreamDefinitionPaths map[string]string
+	upstreamDefinitionPaths  map[string]string
+	providerUUIDByUpstream   map[string]string
+	providerHandleByUpstream map[string]string
+	primaryProviderUUID      string
+	directRemoteAddress      string
+	budgetMatches            []BudgetMatch
+	// Spend tracking state for this request (see budget_tracker.go).
+	budgetAdmittedAt time.Time
+	budgetBlocked    []budgetBlock
+	budgetCharged    bool
+	budgetCrossings  []string
 
 	// defaultUpstream is this route's own compiled-in upstream (cluster name, URL, base
 	// path) — whichever slot it belongs to. Always present; surfaced to policies via the
@@ -2012,6 +2023,9 @@ func (ec *PolicyExecutionContext) buildRequestContexts(headers *extprocv3.HttpHe
 	}
 	if routeMetadata.ProviderName != "" {
 		sharedCtx.Metadata["provider_name"] = routeMetadata.ProviderName
+	}
+	if routeMetadata.APIHandle != "" {
+		sharedCtx.Metadata["api_handle"] = routeMetadata.APIHandle
 	}
 
 	ec.sharedCtx = sharedCtx

@@ -2420,6 +2420,105 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /budgets:
+    post:
+      summary: Create a budget
+      operationId: createBudget
+      x-required-scopes: [ap:budget:create, ap:budget:manage]
+      tags: [Budget Management]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+          application/yaml:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Budget created
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid budget or unknown named target
+        '409':
+          description: Budget handle already exists
+    get:
+      summary: List budgets
+      operationId: listBudgets
+      x-required-scopes: [ap:budget:read, ap:budget:manage]
+      tags: [Budget Management]
+      responses:
+        '200':
+          description: Budgets, including inactive definitions
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /budgets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Immutable budget handle
+        schema:
+          type: string
+    get:
+      summary: Get a budget
+      operationId: getBudget
+      x-required-scopes: [ap:budget:read, ap:budget:manage]
+      tags: [Budget Management]
+      responses:
+        '200':
+          description: Budget definition
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Budget not found
+    put:
+      summary: Update a budget
+      operationId: updateBudget
+      x-required-scopes: [ap:budget:update, ap:budget:manage]
+      tags: [Budget Management]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+          application/yaml:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated budget definition
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid budget
+        '404':
+          description: Budget not found
+        '409':
+          description: Immutable field changed or concurrent edit
+    delete:
+      summary: Delete a budget
+      operationId: deleteBudget
+      x-required-scopes: [ap:budget:delete, ap:budget:manage]
+      tags: [Budget Management]
+      responses:
+        '204':
+          description: Budget deleted
+        '404':
+          description: Budget not found
+
   /llm-provider-templates:
     post:
       summary: Create a new LLM provider template

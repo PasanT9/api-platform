@@ -71,3 +71,5 @@ replace github.com/wso2/api-platform/common => ../../../common
 replace github.com/wso2/api-platform/gateway/common => ../../common
 
 replace github.com/wso2/api-platform/httpkit => ../../../httpkit
+
+replace github.com/moesif/moesifapi-go => ./third_party/moesifapi-go

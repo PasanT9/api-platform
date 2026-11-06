@@ -158,6 +158,29 @@ CREATE TABLE IF NOT EXISTS certificates (
     UNIQUE(gateway_id, name)
 );
 
+-- Budget definitions (spend counters are stored separately)
+CREATE TABLE IF NOT EXISTS budgets (
+    uuid TEXT NOT NULL,
+    gateway_id TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    data_version TEXT NOT NULL DEFAULT '1.0',
+    status TEXT NOT NULL CHECK(status IN ('active', 'inactive')),
+    origin TEXT NOT NULL,
+    resource_kind TEXT,
+    resource_uuid TEXT,
+    configuration TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (gateway_id, uuid),
+    UNIQUE(gateway_id, handle)
+);
+CREATE INDEX IF NOT EXISTS idx_budgets_gateway_status ON budgets(gateway_id, status);
+
 -- LLM Provider Templates table (added in schema version 4)
 CREATE TABLE IF NOT EXISTS llm_provider_templates (
     -- Primary identifier (UUID)

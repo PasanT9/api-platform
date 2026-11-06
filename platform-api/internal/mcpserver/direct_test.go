@@ -178,11 +178,11 @@ func newRealDirect(t *testing.T) realDirect {
 	identity := service.NewIdentityService(repository.NewUserIdentityMappingRepo(db))
 	events := service.NewGatewayEventsService(nil, identity, logger)
 	definitions := service.NewArtifactDefinitions(
-		service.NewRestAPIDefinition(apiRepo, apiUtil),
+		service.NewRestAPIDefinition(apiRepo, apiUtil, projectRepo),
 		service.NewMCPProxyDefinition(mcpProxyRepo, &utils.MCPUtils{}),
 		service.NewLLMProxyDefinition(proxyRepo, providerRepo, templateRepo),
 		service.NewLLMProviderDefinition(providerRepo, templateRepo),
-		service.NewAgentProxyDefinition(agentProxyRepo, &utils.AgentProxyUtils{}),
+		service.NewAgentProxyDefinition(agentProxyRepo, &utils.AgentProxyUtils{}, projectRepo),
 		service.NewGraphQLAPIDefinition(graphqlAPIRepo, projectRepo),
 	)
 
