@@ -307,11 +307,11 @@ func StartPlatformAPIServer(cfg *config.Server, slogger *slog.Logger,
 	// carries. Builds and deployments are shared across kinds; rendering is the
 	// one thing that is not, so this is where each kind supplies its own.
 	artifactDefinitions := service.NewArtifactDefinitions(
-		service.NewRestAPIDefinition(apiRepo, apiUtil),
+		service.NewRestAPIDefinition(apiRepo, apiUtil, projectRepo),
 		service.NewMCPProxyDefinition(mcpProxyRepo, &utils.MCPUtils{}),
 		service.NewLLMProxyDefinition(llmProxyRepo, llmProviderRepo, llmTemplateRepo),
 		service.NewLLMProviderDefinition(llmProviderRepo, llmTemplateRepo),
-		service.NewAgentProxyDefinition(agentProxyRepo, &utils.AgentProxyUtils{}),
+		service.NewAgentProxyDefinition(agentProxyRepo, &utils.AgentProxyUtils{}, projectRepo),
 		service.NewGraphQLAPIDefinition(graphqlAPIRepo, projectRepo),
 	)
 	deploymentService := service.NewDeploymentService(apiRepo, artifactRepo, deploymentRepo, gatewayRepo, orgRepo, apiKeyRepo, gatewayEventsService, auditRepo, apiUtil, artifactDefinitions, identityService, cfg, slogger)

@@ -498,7 +498,12 @@ func (s *APIService) ensureRESTRuntimeArtifactUnchanged(existing, updated *model
 	if existing.Origin != constants.OriginDP {
 		return nil
 	}
-	existingArtifact, err := s.apiUtil.BuildAPIDeploymentYAML(existing)
+	project, err := s.projectRepo.GetProjectByUUIDAndOrgID(existing.ProjectID, existing.OrganizationID)
+	if err != nil {
+		return apperror.ProjectNotFound.Wrap(err)
+	}
+	if project == nil { return apperror.ProjectNotFound.New() }
+	existingArtifact, err := s.apiUtil.BuildAPIDeploymentYAML(existing, project.Handle)
 	if err != nil {
 		// Fail closed: without the existing runtime artifact we cannot prove the update
 		// leaves it unchanged, so treat it as a change the control plane may not make.
@@ -506,7 +511,12 @@ func (s *APIService) ensureRESTRuntimeArtifactUnchanged(existing, updated *model
 			"The update changes the gateway runtime configuration, which is owned by the data-plane "+
 				"gateway and cannot be modified from the control plane.")
 	}
-	updatedArtifact, err := s.apiUtil.BuildAPIDeploymentYAML(updated)
+	updatedProject, err := s.projectRepo.GetProjectByUUIDAndOrgID(updated.ProjectID, updated.OrganizationID)
+	if err != nil {
+		return apperror.ProjectNotFound.Wrap(err)
+	}
+	if updatedProject == nil { return apperror.ProjectNotFound.New() }
+	updatedArtifact, err := s.apiUtil.BuildAPIDeploymentYAML(updated, updatedProject.Handle)
 	if err != nil {
 		return err
 	}

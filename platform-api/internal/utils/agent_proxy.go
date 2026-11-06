@@ -22,6 +22,7 @@ package utils
 import (
 	"fmt"
 
+	commonconstants "github.com/wso2/api-platform/common/constants"
 	"github.com/wso2/api-platform/platform-api/internal/constants"
 	"github.com/wso2/api-platform/platform-api/internal/model"
 
@@ -44,7 +45,7 @@ type AgentProxyUtils struct{}
 // forwarded, so nothing control-plane-only (protocol, ownership, audit,
 // associated gateways) reaches the gateway spec. Omitted optional blocks stay omitted, and
 // explicit false values (rewriteUrls) are preserved.
-func (u *AgentProxyUtils) BuildAgentProxyDeploymentYAML(proxy *model.AgentProxy) (*model.AgentProxyDeploymentYAML, error) {
+func (u *AgentProxyUtils) BuildAgentProxyDeploymentYAML(proxy *model.AgentProxy, projectHandle string) (*model.AgentProxyDeploymentYAML, error) {
 	if proxy == nil {
 		return nil, fmt.Errorf("agent proxy is nil")
 	}
@@ -98,8 +99,12 @@ func (u *AgentProxyUtils) BuildAgentProxyDeploymentYAML(proxy *model.AgentProxy)
 		},
 	}
 	if proxy.ProjectUUID != "" {
+		if projectHandle == "" {
+			return nil, fmt.Errorf("project handle is required for agent proxy %q", proxy.Handle)
+		}
+		deployment.Metadata.Annotations = map[string]string{commonconstants.AnnotationProjectID: projectHandle}
 		deployment.Metadata.Labels = map[string]string{
-			"projectId": proxy.ProjectUUID,
+			commonconstants.DeprecatedLabelProjectID: projectHandle,
 		}
 	}
 
@@ -107,8 +112,8 @@ func (u *AgentProxyUtils) BuildAgentProxyDeploymentYAML(proxy *model.AgentProxy)
 }
 
 // GenerateAgentProxyDeploymentYAML creates the deployment YAML string.
-func (u *AgentProxyUtils) GenerateAgentProxyDeploymentYAML(proxy *model.AgentProxy) (string, error) {
-	d, err := u.BuildAgentProxyDeploymentYAML(proxy)
+func (u *AgentProxyUtils) GenerateAgentProxyDeploymentYAML(proxy *model.AgentProxy, projectHandle string) (string, error) {
+	d, err := u.BuildAgentProxyDeploymentYAML(proxy, projectHandle)
 	if err != nil {
 		return "", err
 	}

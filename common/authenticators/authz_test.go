@@ -218,6 +218,47 @@ func TestAuthorizationMiddleware_AuthSkipped_BypassesAuthorization(t *testing.T)
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
+func TestAuthorizationMiddleware_BudgetScopes(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	config := models.AuthConfig{
+		ResourceRoles: map[string][]string{},
+		ResourceScopes: map[string][]string{
+			"POST /budgets": {"ap:budget:create", "ap:budget:manage"},
+		},
+		BasicRoleScopes: map[string][]string{"admin": {"ap:budget:manage"}},
+	}
+	for _, tc := range []struct {
+		name   string
+		auth   string
+		ac     models.AuthContext
+		skip   bool
+		status int
+	}{
+		{"JWT create", "Bearer token", models.AuthContext{Authenticated: true, Claims: map[string]any{"scope": "ap:budget:create"}}, false, http.StatusOK},
+		{"JWT unrelated", "Bearer token", models.AuthContext{Authenticated: true, Claims: map[string]any{"scope": "ap:budget:read"}}, false, http.StatusForbidden},
+		{"Basic admin", "Basic credential", models.AuthContext{Authenticated: true, Roles: []string{"admin"}}, false, http.StatusOK},
+		{"Basic developer", "Basic credential", models.AuthContext{Authenticated: true, Roles: []string{"developer"}}, false, http.StatusForbidden},
+		{"no-auth mode", "", models.AuthContext{Authenticated: true, Roles: []string{"admin"}}, true, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := buildMux("POST /budgets", config, logger, func(r *http.Request) *http.Request {
+				r = injectAuthContext(r, tc.ac)
+				if tc.skip {
+					r = injectAuthzSkip(r)
+				}
+				return r
+			})
+			req := httptest.NewRequest(http.MethodPost, "/budgets", nil)
+			if tc.auth != "" {
+				req.Header.Set("Authorization", tc.auth)
+			}
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			assert.Equal(t, tc.status, rr.Code)
+		})
+	}
+}
+
 func TestAuthorizationMiddleware_DifferentMethodsSamePathDifferentRoles(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	config := models.AuthConfig{

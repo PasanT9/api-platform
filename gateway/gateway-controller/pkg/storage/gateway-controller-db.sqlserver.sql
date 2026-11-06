@@ -179,6 +179,31 @@ ALTER TABLE dbo.certificates ADD private_key_ciphertext NVARCHAR(MAX) NULL;
 IF COL_LENGTH('dbo.certificates', 'key_algorithm') IS NULL
 ALTER TABLE dbo.certificates ADD key_algorithm NVARCHAR(32) NULL;
 
+-- Budget definitions (spend counters are stored separately)
+IF OBJECT_ID(N'dbo.budgets', N'U') IS NULL
+CREATE TABLE dbo.budgets (
+    uuid NVARCHAR(64) NOT NULL,
+    gateway_id NVARCHAR(64) NOT NULL,
+    handle NVARCHAR(255) NOT NULL,
+    name NVARCHAR(255) NOT NULL,
+    version NVARCHAR(32) NOT NULL,
+    revision BIGINT NOT NULL DEFAULT 1,
+    data_version NVARCHAR(32) NOT NULL DEFAULT '1.0',
+    status NVARCHAR(16) NOT NULL CHECK(status IN ('active', 'inactive')),
+    origin NVARCHAR(32) NOT NULL,
+    resource_kind NVARCHAR(32) NULL,
+    resource_uuid NVARCHAR(64) NULL,
+    configuration NVARCHAR(MAX) NOT NULL,
+    created_by NVARCHAR(255) NOT NULL,
+    created_at DATETIME2(7) NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_by NVARCHAR(255) NOT NULL,
+    updated_at DATETIME2(7) NOT NULL DEFAULT SYSUTCDATETIME(),
+    PRIMARY KEY (gateway_id, uuid),
+    UNIQUE(gateway_id, handle)
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'idx_budgets_gateway_status' AND object_id = OBJECT_ID(N'dbo.budgets'))
+CREATE INDEX idx_budgets_gateway_status ON dbo.budgets(gateway_id, status);
+
 -- LLM Provider Templates table
 IF OBJECT_ID(N'dbo.llm_provider_templates', N'U') IS NULL
 CREATE TABLE dbo.llm_provider_templates (

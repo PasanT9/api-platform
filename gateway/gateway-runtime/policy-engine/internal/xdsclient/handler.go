@@ -363,17 +363,35 @@ func (h *ResourceHandler) HandleRouteConfigUpdate(ctx context.Context, resources
 		// Parse metadata
 		if metaMap, ok := data["metadata"].(map[string]interface{}); ok {
 			rc.Metadata = kernel.RouteMetadata{
-				RouteName:      routeKey,
-				APIName:        getStringFromMap(metaMap, "display_name"),
-				APIVersion:     getStringFromMap(metaMap, "version"),
-				Context:        getStringFromMap(metaMap, "api_context"),
-				Vhost:          getStringFromMap(metaMap, "vhost"),
-				APIKind:        getStringFromMap(metaMap, "kind"),
-				TemplateHandle: getStringFromMap(metaMap, "template_handle"),
-				ProviderName:   getStringFromMap(metaMap, "provider_name"),
-				ProjectID:      getStringFromMap(metaMap, "project_id"),
-				OperationPath:  getStringFromMap(metaMap, "path"),
-				APIId:          getStringFromMap(metaMap, "uuid"),
+				RouteName:           routeKey,
+				APIHandle:           getStringFromMap(metaMap, "handle"),
+				APIName:             getStringFromMap(metaMap, "display_name"),
+				APIVersion:          getStringFromMap(metaMap, "version"),
+				Context:             getStringFromMap(metaMap, "api_context"),
+				Vhost:               getStringFromMap(metaMap, "vhost"),
+				APIKind:             getStringFromMap(metaMap, "kind"),
+				TemplateHandle:      getStringFromMap(metaMap, "template_handle"),
+				ProviderName:        getStringFromMap(metaMap, "provider_name"),
+				PrimaryProviderUUID: getStringFromMap(metaMap, "primary_provider_uuid"),
+				ProjectID:           getStringFromMap(metaMap, "project_id"),
+				OperationPath:       getStringFromMap(metaMap, "path"),
+				APIId:               getStringFromMap(metaMap, "uuid"),
+			}
+			if raw, ok := metaMap["provider_uuid_by_upstream"].(map[string]interface{}); ok {
+				rc.Metadata.ProviderUUIDByUpstream = make(map[string]string, len(raw))
+				for name, value := range raw {
+					if uuid, ok := value.(string); ok {
+						rc.Metadata.ProviderUUIDByUpstream[name] = uuid
+					}
+				}
+			}
+			if raw, ok := metaMap["provider_handle_by_upstream"].(map[string]interface{}); ok {
+				rc.Metadata.ProviderHandleByUpstream = make(map[string]string, len(raw))
+				for name, value := range raw {
+					if handle, ok := value.(string); ok {
+						rc.Metadata.ProviderHandleByUpstream[name] = handle
+					}
+				}
 			}
 		}
 

@@ -144,7 +144,14 @@ func (s *GatewayInternalAPIService) GetAPIByUUID(apiId, orgId string) (map[strin
 		return nil, apperror.RESTAPINotFound.New()
 	}
 
-	apiYaml, err := s.apiUtil.GenerateAPIDeploymentYAML(apiModel)
+	project, err := s.projectRepo.GetProjectByUUIDAndOrgID(apiModel.ProjectID, orgId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve API project: %w", err)
+	}
+	if project == nil {
+		return nil, apperror.ProjectNotFound.New()
+	}
+	apiYaml, err := s.apiUtil.GenerateAPIDeploymentYAML(apiModel, project.Handle)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate API YAML: %w", err)
 	}

@@ -3782,6 +3782,7 @@ func (t *Translator) createExtProcFilter() (*hcm.HttpFilter, error) {
 		AllowModeOverride: true,
 		RequestAttributes: []string{
 			constants.ExtProcRequestAttributeRouteName,
+			"source.address",
 			constants.ExtProcRequestAttributeConnectionMTLS,
 			constants.ExtProcRequestAttributeConnectionPeerCertificate,
 			constants.ExtProcRequestAttributeConnectionPeerCertificateDigest,

@@ -170,6 +170,12 @@ type buildTestGatewayRepo struct {
 	gateway *model.Gateway
 }
 
+type buildTestProjectRepo struct{ repository.ProjectRepository }
+
+func (m *buildTestProjectRepo) GetProjectByUUIDAndOrgID(projectID, orgID string) (*model.Project, error) {
+	return &model.Project{ID: projectID, Handle: "test-project"}, nil
+}
+
 func (m *buildTestGatewayRepo) GetByHandleAndOrgID(handle, orgUUID string) (*model.Gateway, error) {
 	return m.gateway, nil
 }
@@ -194,7 +200,7 @@ func newBuildTestService(apiRepo *buildTestAPIRepo, depRepo *buildTestDeployment
 		builds: NewBuildService(
 			artifactRepo,
 			depRepo,
-			NewArtifactDefinitions(NewRestAPIDefinition(apiRepo, apiUtil)),
+			NewArtifactDefinitions(NewRestAPIDefinition(apiRepo, apiUtil, &buildTestProjectRepo{})),
 			newTestIdentityService(),
 			&testConfig,
 			slog.Default(),

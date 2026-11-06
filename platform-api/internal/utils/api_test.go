@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+	commonconstants "github.com/wso2/api-platform/common/constants"
 
 	"github.com/wso2/api-platform/platform-api/api"
 	"github.com/wso2/api-platform/platform-api/internal/constants"
@@ -525,7 +526,7 @@ func TestGenerateAPIDeploymentYAMLIncludesPolicies(t *testing.T) {
 		},
 	}
 
-	yamlString, err := util.GenerateAPIDeploymentYAML(apiModel)
+	yamlString, err := util.GenerateAPIDeploymentYAML(apiModel, "project-handle")
 	if err != nil {
 		t.Fatalf("GenerateAPIDeploymentYAML() error = %v", err)
 	}
@@ -614,9 +615,12 @@ func TestBuildAPIDeploymentYAML(t *testing.T) {
 	}
 
 	// Build struct
-	deploymentStruct, err := util.BuildAPIDeploymentYAML(apiModel)
+	deploymentStruct, err := util.BuildAPIDeploymentYAML(apiModel, "project-handle")
 	if err != nil {
 		t.Fatalf("BuildAPIDeploymentYAML() error = %v", err)
+	}
+	if got := deploymentStruct.Metadata.Annotations[commonconstants.AnnotationProjectID]; got != "project-handle" {
+		t.Errorf("project annotation = %q, want handle", got)
 	}
 
 	// Marshal the struct
@@ -626,7 +630,7 @@ func TestBuildAPIDeploymentYAML(t *testing.T) {
 	}
 
 	// Generate via the wrapper
-	yamlString, err := util.GenerateAPIDeploymentYAML(apiModel)
+	yamlString, err := util.GenerateAPIDeploymentYAML(apiModel, "project-handle")
 	if err != nil {
 		t.Fatalf("GenerateAPIDeploymentYAML() error = %v", err)
 	}
@@ -670,7 +674,7 @@ func TestBuildAPIDeploymentYAML_NilRequestReturnsError(t *testing.T) {
 				},
 			},
 		}
-		if _, err := util.BuildAPIDeploymentYAML(apiModel); err == nil {
+		if _, err := util.BuildAPIDeploymentYAML(apiModel, "project-handle"); err == nil {
 			t.Fatal("expected an error for an operation with no request, got nil")
 		}
 	})
@@ -681,7 +685,7 @@ func TestBuildAPIDeploymentYAML_NilRequestReturnsError(t *testing.T) {
 			Kind:     constants.WebSubApi,
 			Channels: []model.Channel{{}},
 		}
-		if _, err := util.BuildAPIDeploymentYAML(apiModel); err == nil {
+		if _, err := util.BuildAPIDeploymentYAML(apiModel, "project-handle"); err == nil {
 			t.Fatal("expected an error for a channel with no request, got nil")
 		}
 	})

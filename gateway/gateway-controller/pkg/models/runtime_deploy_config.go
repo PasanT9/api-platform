@@ -60,6 +60,11 @@ type Metadata struct {
 type LLMMetadata struct {
 	TemplateHandle string
 	ProviderName   string
+	// ProviderUUIDByUpstream identifies each provider attachment of an LLM
+	// proxy by the name routing policies select before the loopback hop.
+	ProviderUUIDByUpstream   map[string]string
+	PrimaryProviderUUID      string
+	ProviderHandleByUpstream map[string]string
 }
 
 // RouteHeaderMatch mirrors Gateway API header matching for Envoy route selection.

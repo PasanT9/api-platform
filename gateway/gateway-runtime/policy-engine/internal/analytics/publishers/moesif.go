@@ -256,6 +256,12 @@ func (m *Moesif) Publish(event *dto.Event) {
 	metadataMap["subType"] = event.API.SubType
 	metadataMap["apiId"] = event.API.APIID
 	metadataMap["projectId"] = event.API.ProjectID
+	if budget, ok := event.Properties["budget"]; ok {
+		metadataMap["budget"] = budget
+	}
+	if apiKey, ok := event.Properties["apiKey"]; ok {
+		metadataMap["apiKey"] = apiKey
+	}
 
 	// apiResourceTemplate mirrors legacy WSO2 APIM's Moesif publisher (see
 	// SynapseAnalyticsDataProvider#getOperation), which existing Moesif charts
@@ -483,6 +489,10 @@ func (m *Moesif) Publish(event *dto.Event) {
 		UserId:   &userID,
 		Metadata: metadataMap,
 		A2a:      a2aBlock,
+	}
+	if event.MetaInfo.CorrelationID != "" {
+		transactionID := event.MetaInfo.CorrelationID
+		eventModel.TransactionId = &transactionID
 	}
 
 	// Set company ID to the billing customer of a paid subscription, and remove the

@@ -32,6 +32,7 @@ import (
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/analytics"
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/analytics/correlation"
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/analytics/headers"
+	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/constants"
 )
 
 // Constants for analytics metadata
@@ -379,6 +380,47 @@ func buildAnalyticsStruct(analyticsData map[string]any, execCtx *PolicyExecution
 
 	// Add system-level metadata if context is provided
 	if execCtx != nil && execCtx.sharedCtx != nil {
+		// The validated API key's identity (name and owner), which no other analytics
+		// field carries. Project, provider and proxy already reach analytics as API fields.
+		if execCtx.requestHeaderCtx != nil {
+			request := execCtx.budgetRequest()
+			if request.APIKeyName != "" {
+				encoded, err := json.Marshal(map[string]string{
+					"name":      request.APIKeyName,
+					"ownerKind": request.APIKeyOwnerKind,
+					"owner":     request.APIKeyOwnerHandle,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("encode API key identity: %w", err)
+				}
+				fields[analytics.APIKeyIdentityMetadataKey] = structpb.NewStringValue(string(encoded))
+			}
+		}
+		if len(execCtx.budgetMatches) > 0 {
+			encoded, err := json.Marshal(execCtx.budgetMatches)
+			if err != nil {
+				return nil, fmt.Errorf("encode budget matches: %w", err)
+			}
+			fields[analytics.BudgetMatchesMetadataKey] = structpb.NewStringValue(string(encoded))
+		}
+		if status, ok := execCtx.sharedCtx.Metadata[analytics.LLMCostStatusMetadataKey].(string); ok && status != "" {
+			fields[analytics.LLMCostStatusMetadataKey] = structpb.NewStringValue(status)
+			// llm-cost has run for this response, so its cost is final: charge it once.
+			cost, _ := execCtx.sharedCtx.Metadata[constants.LLMCostMetadataKey].(string)
+			execCtx.chargeBudgets(cost)
+		}
+		if len(execCtx.budgetBlocked) > 0 {
+			handles := make([]string, 0, len(execCtx.budgetBlocked))
+			for _, block := range execCtx.budgetBlocked {
+				handles = append(handles, block.Handle)
+			}
+			encoded, _ := json.Marshal(handles)
+			fields[analytics.BudgetBlockedMetadataKey] = structpb.NewStringValue(string(encoded))
+		}
+		if len(execCtx.budgetCrossings) > 0 {
+			encoded, _ := json.Marshal(execCtx.budgetCrossings)
+			fields[analytics.BudgetCrossingsMetadataKey] = structpb.NewStringValue(string(encoded))
+		}
 
 		sharedCtx := execCtx.sharedCtx
 		if sharedCtx.APIId != "" {

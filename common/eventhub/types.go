@@ -42,6 +42,8 @@ const (
 	EventTypeLLMProxy EventType = "LLM_PROXY"
 	// EventTypeLLMTemplate represents an LLM template change event
 	EventTypeLLMTemplate EventType = "LLM_TEMPLATE"
+	// EventTypeBudget represents a budget definition change event.
+	EventTypeBudget EventType = "BUDGET"
 	// EventTypeMCPProxy represents an MCP proxy change event
 	EventTypeMCPProxy EventType = "MCP_PROXY"
 	// EventTypeAgent represents an Agent (A2A) change event

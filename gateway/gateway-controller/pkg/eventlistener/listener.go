@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/wso2/api-platform/common/eventhub"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/config"
@@ -189,10 +190,14 @@ func (l *EventListener) Stop() {
 
 // processEvents handles incoming events from the EventHub subscription
 func (l *EventListener) processEvents() {
+	budgetReconcileTicker := time.NewTicker(30 * time.Second)
+	defer budgetReconcileTicker.Stop()
 	for {
 		select {
 		case <-l.ctx.Done():
 			return
+		case <-budgetReconcileTicker.C:
+			l.reconcileBudgets()
 		case event, ok := <-l.eventCh:
 			if !ok {
 				l.logger.Info("Event channel closed, stopping event processing")
@@ -248,6 +253,8 @@ func (l *EventListener) handleEvent(event eventhub.Event) {
 		l.processLLMProxyEvent(event)
 	case eventhub.EventTypeLLMTemplate:
 		l.processLLMTemplateEvent(event)
+	case eventhub.EventTypeBudget:
+		l.processBudgetEvent(event)
 	case eventhub.EventTypeMCPProxy:
 		l.processMCPProxyEvent(event)
 	case eventhub.EventTypeAgent:

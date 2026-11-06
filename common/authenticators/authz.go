@@ -20,6 +20,8 @@ package authenticators
 import (
 	"log/slog"
 	"net/http"
+	"reflect"
+	"strings"
 
 	commonerrors "github.com/wso2/api-platform/common/errors"
 	"github.com/wso2/api-platform/common/models"
@@ -31,6 +33,55 @@ import (
 func AuthorizationMiddleware(config models.AuthConfig, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resourcePattern := r.Pattern
+			if required, found := config.ResourceScopes[resourcePattern]; found {
+				// No-auth mode and skip paths must not bypass a scoped route.
+				if GetAuthzSkip(r) {
+					httputil.WriteError(w, http.StatusForbidden, "forbidden", commonerrors.ErrForbidden.Error())
+					return
+				}
+				ac, ok := GetAuthContext(r)
+				if !ok || !ac.Authenticated {
+					httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+					return
+				}
+				granted := make(map[string]bool)
+				for _, role := range ac.Roles {
+					granted[role] = true // an IDP roles claim may contain scopes directly
+					if strings.HasPrefix(r.Header.Get("Authorization"), "Basic ") {
+						for _, scope := range config.BasicRoleScopes[role] {
+							granted[scope] = true
+						}
+					}
+				}
+				claims := reflect.ValueOf(ac.Claims)
+				if claims.IsValid() && claims.Kind() == reflect.Map {
+					rawValue := claims.MapIndex(reflect.ValueOf("scope"))
+					if rawValue.IsValid() {
+						raw := rawValue.Interface()
+						switch scopes := raw.(type) {
+						case string:
+							for _, scope := range strings.Fields(scopes) {
+								granted[scope] = true
+							}
+						case []any:
+							for _, entry := range scopes {
+								if scope, ok := entry.(string); ok {
+									granted[scope] = true
+								}
+							}
+						}
+					}
+				}
+				for _, scope := range required {
+					if granted[scope] {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
+				httputil.WriteError(w, http.StatusForbidden, "forbidden", commonerrors.ErrForbidden.Error())
+				return
+			}
 			// Skip authorization if authentication was skipped
 			if GetAuthzSkip(r) {
 				next.ServeHTTP(w, r)
@@ -55,7 +106,7 @@ func AuthorizationMiddleware(config models.AuthConfig, logger *slog.Logger) func
 			// route pattern including method, e.g. "GET /management/v1/apis/{id}".
 			// An empty pattern means no route matched — skip authz and let the
 			// mux return 404.
-			resourcePattern := r.Pattern
+			resourcePattern = r.Pattern
 			if resourcePattern == "" {
 				next.ServeHTTP(w, r)
 				return

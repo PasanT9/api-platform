@@ -99,6 +99,26 @@ func createBaseEvent() *dto.Event {
 	}
 }
 
+func TestMoesifBudgetMetadataAndTransactionID(t *testing.T) {
+	m := createTestMoesifWithoutAPI()
+	event := createBaseEvent()
+	event.Properties["budget"] = map[string]any{"handles": []string{"team-monthly"}, "costStatus": "priced"}
+	event.Properties["apiKey"] = map[string]string{"name": "support-agent-key", "ownerKind": "LlmProvider", "owner": "openai"}
+	m.Publish(event)
+	require.Len(t, m.events, 1)
+	require.Equal(t, "corr-123", *m.events[0].TransactionId)
+	require.Equal(t, event.Properties["budget"], getMetadata(m.events[0])["budget"])
+	require.Equal(t, event.Properties["apiKey"], getMetadata(m.events[0])["apiKey"])
+}
+
+func TestMoesifOmitsAPIKeyWhenAbsent(t *testing.T) {
+	m := createTestMoesifWithoutAPI()
+	m.Publish(createBaseEvent())
+	require.Len(t, m.events, 1)
+	_, present := getMetadata(m.events[0])["apiKey"]
+	require.False(t, present)
+}
+
 func TestNewMoesif_NilConfig(t *testing.T) {
 	result := NewMoesif(nil)
 	assert.Nil(t, result, "NewMoesif should return nil when config is nil")
@@ -636,7 +656,6 @@ func TestPublish_APIResourceTemplateMetadata(t *testing.T) {
 		metadata := getMetadata(moesif.events[0])
 		assert.Equal(t, "/pets/{petId}", metadata["apiResourceTemplate"])
 	})
-
 
 	t.Run("GraphQL uses operationName when present", func(t *testing.T) {
 		moesif := createTestMoesifWithoutAPI()

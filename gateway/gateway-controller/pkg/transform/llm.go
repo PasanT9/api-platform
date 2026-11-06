@@ -131,6 +131,22 @@ func (t *LLMTransformer) extractLLMMetadata(cfg *models.StoredConfig) *models.LL
 			meta.TemplateHandle = provSrc.Spec.Template
 			meta.ProviderName = provSrc.Metadata.Name
 		}
+		meta.PrimaryProviderUUID = providerCfg.UUID
+		meta.ProviderUUIDByUpstream = map[string]string{primary.EffectiveName(): providerCfg.UUID}
+		meta.ProviderHandleByUpstream = map[string]string{primary.EffectiveName(): providerCfg.Handle}
+		if sc.Spec.AdditionalProviders != nil {
+			for _, attachment := range *sc.Spec.AdditionalProviders {
+				provider, err := t.store.GetByKindAndHandle(string(api.LLMProviderConfigurationKindLlmProvider), attachment.Id)
+				if err == nil && provider != nil {
+					name := attachment.Id
+					if attachment.As != nil && *attachment.As != "" {
+						name = *attachment.As
+					}
+					meta.ProviderUUIDByUpstream[name] = provider.UUID
+					meta.ProviderHandleByUpstream[name] = provider.Handle
+				}
+			}
+		}
 	}
 
 	if meta.TemplateHandle == "" && meta.ProviderName == "" {

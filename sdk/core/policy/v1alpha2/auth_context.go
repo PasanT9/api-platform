@@ -51,6 +51,15 @@ type AuthContext struct {
 	// an API key application ID or an OAuth2 client_id. Empty if not applicable.
 	CredentialID string
 
+	// APIKeyID is the immutable UUID of a successfully validated gateway API
+	// key. Empty for all other authentication types. Budget matching must use
+	// this field rather than a caller header or a hash of the presented key.
+	APIKeyID string
+	// APIKeyName and owner identify a validated key in budget documents.
+	APIKeyName        string
+	APIKeyOwnerKind   string
+	APIKeyOwnerHandle string
+
 	// Properties holds additional claims or data that do not fit into the typed
 	// fields above (e.g., custom JWT claims). Values are flattened to a single string,
 	// so a multi-valued (array) claim is serialized (e.g., JSON) into one entry.
