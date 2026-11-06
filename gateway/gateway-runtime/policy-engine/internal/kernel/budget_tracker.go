@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,8 @@ type spendStore interface {
 	Spent(key string) int64
 	// Add adds nanos and returns the spend before and after the addition.
 	Add(key string, nanos int64) (before, after int64)
+	// WithPrefix returns every key that starts with prefix and its spend.
+	WithPrefix(prefix string) map[string]int64
 }
 
 type memorySpendStore struct {
@@ -78,6 +81,18 @@ func (s *memorySpendStore) Add(key string, nanos int64) (int64, int64) {
 		s.spends[key] = after
 	}
 	return before, after
+}
+
+func (s *memorySpendStore) WithPrefix(prefix string) map[string]int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]int64)
+	for key, spent := range s.spends {
+		if strings.HasPrefix(key, prefix) {
+			out[key] = spent
+		}
+	}
+	return out
 }
 
 var budgetSpend spendStore = newMemorySpendStore()

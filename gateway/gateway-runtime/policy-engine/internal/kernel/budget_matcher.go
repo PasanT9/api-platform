@@ -178,8 +178,11 @@ func isBudgetLoopback(ec *PolicyExecutionContext) bool {
 	if ec.sharedCtx.APIKind != policy.APIKindLlmProvider {
 		return false
 	}
+	// The LLM proxy stamps "1" on its provider hop (gateway-controller
+	// InternalLoopbackHeader); like the analytics system policy, any nonempty value
+	// marks the hop. The peer check below keeps external callers from forging it.
 	marker := ec.requestHeaderCtx.Headers.Get(analyticsInternalLoopbackKey)
-	if len(marker) == 0 || marker[0] != "true" {
+	if len(marker) == 0 || marker[0] == "" {
 		return false
 	}
 	address := ec.directRemoteAddress

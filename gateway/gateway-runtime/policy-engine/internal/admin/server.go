@@ -76,6 +76,7 @@ func NewServer(cfg *config.AdminConfig, k *kernel.Kernel, reg *registry.PolicyRe
 	mux.Handle("/config_dump", configDumpEnabledMiddleware(cfg.ConfigDump.Enabled,
 		ipWhitelistMiddleware(cfg.AllowedIPs, configDumpHandler)))
 	mux.Handle("/xds_sync_status", ipWhitelistMiddleware(cfg.AllowedIPs, xdsSyncHandler))
+	mux.Handle("/budget_usage", ipWhitelistMiddleware(cfg.AllowedIPs, NewBudgetUsageHandler()))
 	// Health endpoint is registered without IP whitelist so Docker/k8s health probes can reach it
 	mux.Handle("/health", healthHandler)
 

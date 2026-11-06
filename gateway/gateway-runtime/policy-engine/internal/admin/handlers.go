@@ -142,6 +142,33 @@ func (h *XDSSyncStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// BudgetUsageHandler handles GET /budget_usage: the in-memory spend of every
+// active budget's allowances in the current period, for this instance only.
+type BudgetUsageHandler struct {
+	snapshot func() []kernel.BudgetUsage
+}
+
+// NewBudgetUsageHandler creates a budget usage handler.
+func NewBudgetUsageHandler() *BudgetUsageHandler {
+	return &BudgetUsageHandler{snapshot: kernel.BudgetUsageSnapshot}
+}
+
+// ServeHTTP implements http.Handler for budget usage.
+func (h *BudgetUsageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"component": "policy-engine",
+		"timestamp": time.Now().UTC(),
+		"scope":     "this instance; counters are in memory and reset on restart",
+		"budgets":   h.snapshot(),
+	})
+}
+
 // HealthHandler handles GET /health requests.
 type HealthHandler struct {
 	health       HealthProvider
