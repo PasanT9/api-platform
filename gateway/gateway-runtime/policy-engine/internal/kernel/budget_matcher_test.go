@@ -130,6 +130,17 @@ func TestBudgetLoopbackRequiresDirectLoopbackPeer(t *testing.T) {
 	require.True(t, isBudgetLoopback(ec))
 	ec.directRemoteAddress = ""
 	require.False(t, isBudgetLoopback(ec), "missing peer must not suppress accounting")
+
+	// The value the LLM proxy actually sends on its provider hop.
+	ec.requestHeaderCtx = &policy.RequestHeaderContext{Headers: policy.NewHeaders(map[string][]string{
+		analyticsInternalLoopbackKey: {"1"},
+	})}
+	ec.directRemoteAddress = "127.0.0.1:41000"
+	require.True(t, isBudgetLoopback(ec), "the proxy's provider hop is not a second budgeted request")
+	ec.requestHeaderCtx = &policy.RequestHeaderContext{Headers: policy.NewHeaders(map[string][]string{
+		analyticsInternalLoopbackKey: {""},
+	})}
+	require.False(t, isBudgetLoopback(ec), "an empty marker is not a loopback")
 }
 
 func TestBudgetRequestUsesSelectedProviderAndValidatedKey(t *testing.T) {
