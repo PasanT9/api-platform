@@ -35,6 +35,14 @@ type BudgetStorage interface {
 	ListBudgets() ([]*models.StoredBudget, error)
 	UpdateBudget(*models.StoredBudget) error
 	DeleteBudget(string) error
+	// GetBudgetByUUID reads a budget by its UUID, which the control plane assigns.
+	GetBudgetByUUID(string) (*models.StoredBudget, error)
+	// UpsertControlPlaneBudget saves a budget received from the control plane
+	// under the control plane's UUID and revision. It applies only a revision
+	// newer than the stored one and reports whether it changed anything.
+	UpsertControlPlaneBudget(*models.StoredBudget) (bool, error)
+	// DeleteBudgetByUUID deletes a budget by UUID.
+	DeleteBudgetByUUID(string) error
 }
 
 var budgetSelectColumns = `uuid, gateway_id, handle, name, version, revision, data_version, status, origin,
@@ -244,6 +252,85 @@ func (s *sqlStore) UpdateBudget(b *models.StoredBudget) error {
 
 func (s *sqlStore) DeleteBudget(handle string) error {
 	result, err := s.exec(`DELETE FROM budgets WHERE gateway_id = ? AND handle = ?`, s.gatewayId, handle)
+	if err != nil {
+		return fmt.Errorf("delete budget: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *sqlStore) GetBudgetByUUID(id string) (*models.StoredBudget, error) {
+	return scanBudget(s.queryRow(`SELECT `+budgetSelectColumns+` FROM budgets WHERE gateway_id = ? AND uuid = ?`, s.gatewayId, id))
+}
+
+// UpsertControlPlaneBudget stores a control-plane budget. Named providers and
+// API keys are not resolved: a budget reaches every gateway of the organization,
+// but a provider is deployed only on some, and there the budget simply never
+// matches. A budget created on this gateway's own API with the same handle is
+// left alone and reported as a conflict.
+func (s *sqlStore) UpsertControlPlaneBudget(b *models.StoredBudget) (bool, error) {
+	configuration, err := json.Marshal(b.Document)
+	if err != nil {
+		return false, fmt.Errorf("encode budget: %w", err)
+	}
+	tx, err := s.db.BeginTx(s.ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin budget upsert: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var revision int64
+	var origin string
+	err = tx.QueryRowContext(s.ctx, s.bind(`SELECT revision, origin FROM budgets WHERE gateway_id = ? AND uuid = ?`),
+		s.gatewayId, b.UUID).Scan(&revision, &origin)
+	now := time.Now().UTC()
+	b.GatewayID = s.gatewayId
+	b.Origin = models.OriginControlPlane
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		b.CreatedAt, b.UpdatedAt = now, now
+		_, err = tx.ExecContext(s.ctx, s.bind(`INSERT INTO budgets
+            (uuid, gateway_id, handle, name, version, revision, data_version, status, origin,
+             resource_kind, resource_uuid, configuration, created_by, created_at, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`),
+			b.UUID, b.GatewayID, b.Handle, b.Name, b.Version, b.Revision, b.DataVersion,
+			b.Status, string(b.Origin), nullableString(b.ResourceKind),
+			string(configuration), b.CreatedBy, now, b.UpdatedBy, now)
+		if err != nil {
+			if s.isUniqueViolation(err) {
+				return false, fmt.Errorf("a gateway budget already uses handle %q: %w", b.Handle, ErrConflict)
+			}
+			return false, fmt.Errorf("insert control plane budget: %w", err)
+		}
+	case err != nil:
+		return false, fmt.Errorf("load budget for upsert: %w", err)
+	case models.Origin(origin) != models.OriginControlPlane:
+		return false, fmt.Errorf("budget %s was not created by the control plane: %w", b.UUID, ErrConflict)
+	case b.Revision <= revision:
+		return false, nil // a repeated or older event
+	default:
+		b.UpdatedAt = now
+		_, err = tx.ExecContext(s.ctx, s.bind(`UPDATE budgets SET name = ?, status = ?, configuration = ?,
+            revision = ?, updated_by = ?, updated_at = ? WHERE gateway_id = ? AND uuid = ?`),
+			b.Name, b.Status, string(configuration), b.Revision, b.UpdatedBy, now, s.gatewayId, b.UUID)
+		if err != nil {
+			return false, fmt.Errorf("update control plane budget: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit control plane budget: %w", err)
+	}
+	return true, nil
+}
+
+func (s *sqlStore) DeleteBudgetByUUID(id string) error {
+	result, err := s.exec(`DELETE FROM budgets WHERE gateway_id = ? AND uuid = ?`, s.gatewayId, id)
 	if err != nil {
 		return fmt.Errorf("delete budget: %w", err)
 	}

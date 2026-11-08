@@ -30,6 +30,7 @@ import (
 
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/storage"
+	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/utils"
 )
 
 func TestBudgetManagementCRUD(t *testing.T) {
@@ -103,5 +104,41 @@ func TestBudgetManagementCRUD(t *testing.T) {
 	s.GetBudget(missing, request(http.MethodGet, "/budgets/team-monthly", nil), "team-monthly")
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("get after delete = %d", missing.Code)
+	}
+}
+
+func TestBudgetManagementRefusesControlPlaneBudgets(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	db, err := storage.NewStorage(storage.BackendConfig{
+		Type: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "gateway.db"), GatewayID: "gw-1",
+	}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	s := &APIServer{db: db, gatewayID: "gw-1", logger: logger}
+	doc := models.BudgetDocument{
+		APIVersion: models.BudgetAPIVersion, Kind: "Budget",
+		Metadata: models.BudgetMetadata{Name: "org-openai"},
+		Spec: models.BudgetSpec{DisplayName: "Org OpenAI", Limit: models.BudgetLimit{
+			Amount: "100.00", Period: "month", Action: "block",
+		}},
+	}
+	if _, _, err := utils.ApplyControlPlaneBudget(db.(storage.BudgetStorage),
+		utils.ControlPlaneBudget{UUID: "6f8a1c2e-3b4d-4e5f-8a9b-0c1d2e3f4a5b", Revision: 1, Document: doc}); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(doc)
+	put := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/budgets/org-openai", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	s.UpdateBudget(put, r, "org-openai")
+	if put.Code != http.StatusConflict {
+		t.Fatalf("update of a control-plane budget = %d, want 409", put.Code)
+	}
+	del := httptest.NewRecorder()
+	s.DeleteBudget(del, httptest.NewRequest(http.MethodDelete, "/budgets/org-openai", nil), "org-openai")
+	if del.Code != http.StatusConflict {
+		t.Fatalf("delete of a control-plane budget = %d, want 409", del.Code)
 	}
 }

@@ -28,7 +28,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wso2/api-platform/common/authenticators"
-	"github.com/wso2/api-platform/common/eventhub"
 	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/middleware"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
@@ -111,27 +110,17 @@ func budgetActor(r *http.Request) string {
 }
 
 func (s *APIServer) publishBudgetChange(r *http.Request, action string, b *models.StoredBudget) {
-	if s.lazyResourceManager != nil {
-		var err error
-		if action == "DELETE" || b.Status != "active" {
-			err = s.lazyResourceManager.RemoveResourceByIDAndType(b.UUID, "Budget", middleware.GetCorrelationID(r))
-		} else {
-			err = s.lazyResourceManager.StoreResource(utils.BudgetLazyResource(b), middleware.GetCorrelationID(r))
-		}
-		if err != nil && s.logger != nil {
-			s.logger.Error("Failed to sync budget lazy resource", "budget", b.Handle, "error", err)
-		}
+	utils.PublishBudgetChange(s.lazyResourceManager, s.eventHub, s.gatewayID, action, b, middleware.GetCorrelationID(r), s.logger)
+}
+
+// controlPlaneOwned refuses gateway API changes to a budget the control plane
+// manages; the control plane's next event or sync would overwrite them.
+func controlPlaneOwned(w http.ResponseWriter, b *models.StoredBudget) bool {
+	if b.Origin != models.OriginControlPlane {
+		return false
 	}
-	if s.eventHub != nil {
-		payload, _ := json.Marshal(map[string]string{"uuid": b.UUID})
-		event := eventhub.Event{
-			GatewayID: s.gatewayID, OriginatedTimestamp: time.Now().UTC(), EventType: eventhub.EventTypeBudget,
-			Action: action, EntityID: b.Handle, EventID: middleware.GetCorrelationID(r), EventData: string(payload),
-		}
-		if err := s.eventHub.PublishEvent(s.gatewayID, event); err != nil && s.logger != nil {
-			s.logger.Error("Failed to publish budget event", "budget", b.Handle, "error", err)
-		}
-	}
+	budgetError(w, http.StatusConflict, "Budget is managed by the control plane; change it there")
+	return true
 }
 
 func (s *APIServer) CreateBudget(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +209,9 @@ func (s *APIServer) UpdateBudget(w http.ResponseWriter, r *http.Request, id stri
 		budgetError(w, http.StatusInternalServerError, "Failed to get budget")
 		return
 	}
+	if controlPlaneOwned(w, current) {
+		return
+	}
 	doc, err := decodeBudget(r, w)
 	if err != nil {
 		budgetError(w, http.StatusBadRequest, err.Error())
@@ -262,6 +254,9 @@ func (s *APIServer) DeleteBudget(w http.ResponseWriter, r *http.Request, id stri
 	}
 	if err != nil {
 		budgetError(w, http.StatusInternalServerError, "Failed to get budget")
+		return
+	}
+	if controlPlaneOwned(w, current) {
 		return
 	}
 	if err := store.DeleteBudget(id); err != nil {

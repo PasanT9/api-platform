@@ -162,3 +162,74 @@ func TestBudgetUpdateCanDisableAfterAPIKeyDeletion(t *testing.T) {
 		t.Fatalf("new nonexistent exemption = %v, want not found", err)
 	}
 }
+
+func TestUpsertControlPlaneBudgetKeepsDisabledBudgets(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	store, err := NewStorage(BackendConfig{Type: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "gateway.db"), GatewayID: "gw-1"}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	sqlStore := store.(*sqlStore)
+
+	doc := testBudgetDocument()
+	// The provider is not deployed on this gateway; a control-plane budget is
+	// still stored and simply never matches here.
+	doc.Spec.Resource = &models.BudgetResource{Kind: "LlmProvider", ID: "openai", Allocation: "shared"}
+	id := uuid.NewString()
+	cp := func(revision int64, status string) *models.StoredBudget {
+		d := doc
+		d.Spec.Status = status
+		return &models.StoredBudget{UUID: id, Handle: d.Metadata.Name, Name: d.Spec.DisplayName, Version: "v1.0",
+			DataVersion: "1.0", Revision: revision, Status: status, ResourceKind: "LlmProvider", Document: d}
+	}
+
+	if applied, err := sqlStore.UpsertControlPlaneBudget(cp(1, "active")); err != nil || !applied {
+		t.Fatalf("create = %v, %v", applied, err)
+	}
+	if applied, err := sqlStore.UpsertControlPlaneBudget(cp(2, "inactive")); err != nil || !applied {
+		t.Fatalf("disable = %v, %v", applied, err)
+	}
+	got, err := sqlStore.GetBudgetByUUID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "inactive" || got.Revision != 2 || got.Origin != models.OriginControlPlane || got.ResourceUUID != "" {
+		t.Fatalf("disabled budget not kept as expected: %+v", got)
+	}
+	all, err := sqlStore.ListBudgets()
+	if err != nil || len(all) != 1 {
+		t.Fatalf("list = %d budgets, %v; disabled budgets must stay listed", len(all), err)
+	}
+	if applied, err := sqlStore.UpsertControlPlaneBudget(cp(1, "active")); err != nil || applied {
+		t.Fatalf("older revision = %v, %v; want ignored", applied, err)
+	}
+	if got, _ = sqlStore.GetBudgetByUUID(id); got.Status != "inactive" {
+		t.Fatalf("an older event re-enabled the budget: %+v", got)
+	}
+
+	local := testBudgetDocument()
+	local.Metadata.Name = "gateway-local"
+	gw := &models.StoredBudget{UUID: uuid.NewString(), Handle: local.Metadata.Name, Name: "Local", Version: "v1.0",
+		DataVersion: "1.0", Status: "active", Origin: models.OriginGatewayAPI, Document: local}
+	if err := sqlStore.CreateBudget(gw); err != nil {
+		t.Fatal(err)
+	}
+	clash := cp(1, "active")
+	clash.UUID, clash.Handle, clash.Document.Metadata.Name = uuid.NewString(), "gateway-local", "gateway-local"
+	if _, err := sqlStore.UpsertControlPlaneBudget(clash); !errors.Is(err, ErrConflict) {
+		t.Fatalf("handle clash with a gateway budget = %v, want conflict", err)
+	}
+	overwrite := cp(9, "active")
+	overwrite.UUID = gw.UUID
+	if _, err := sqlStore.UpsertControlPlaneBudget(overwrite); !errors.Is(err, ErrConflict) {
+		t.Fatalf("overwriting a gateway budget = %v, want conflict", err)
+	}
+
+	if err := sqlStore.DeleteBudgetByUUID(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlStore.DeleteBudgetByUUID(id); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete = %v, want not found", err)
+	}
+}

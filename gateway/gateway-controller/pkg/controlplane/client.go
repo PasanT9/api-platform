@@ -154,6 +154,7 @@ type Client struct {
 	subscriptionSnapshotUpdater utils.SubscriptionSnapshotUpdater
 	subscriptionResourceService *utils.SubscriptionResourceService
 	eventHub                    eventhub.EventHub
+	lazyResourceManager         *lazyresourcexds.LazyResourceStateManager // budgets for the policy engine
 	gatewayID                   string
 	gatewayPath                 string      // cached gateway path from well-known discovery
 	syncOnce                    sync.Once   // ensures deployment sync runs only on first connect
@@ -245,6 +246,7 @@ func NewClient(
 		subscriptionSnapshotUpdater:  subSnapshotManager,
 		subscriptionResourceService:  subscriptionResourceService,
 		eventHub:                     eventHubInstance,
+		lazyResourceManager:          lazyResourceManager,
 		gatewayID:                    gatewayID,
 		webhookSecretStore:           webhookSecretStore,
 		webhookSecretSnapshotManager: webhookSecretSnapshotManager,
@@ -543,6 +545,7 @@ func (c *Client) Connect() error {
 			// Push gateway-originated artifacts up to the platform-API control plane.
 			c.SubmitArtifactPush(c.PushGatewayArtifactsToControlPlane)
 			c.syncSubscriptionPlans(gwID)
+			c.syncBudgets()
 			c.syncSubscriptionsForExistingAPIs(gwID)
 			// Sync API keys for LlmProvider, LlmProxy, and RestApi artifacts.
 			c.syncAPIKeysForExistingArtifacts(gwID)
@@ -570,6 +573,7 @@ func (c *Client) Connect() error {
 			// Push gateway-originated artifacts up to the platform-API control plane.
 			c.SubmitArtifactPush(c.PushGatewayArtifactsToControlPlane)
 			c.syncSubscriptionPlans(gwID)
+			c.syncBudgets()
 			c.syncSubscriptionsForExistingAPIs(gwID)
 			// Sync API keys for LlmProvider, LlmProxy, and RestApi artifacts.
 			c.syncAPIKeysForExistingArtifacts(gwID)
@@ -1498,6 +1502,10 @@ func (c *Client) handleMessage(messageType int, message []byte) {
 		c.handleSubscriptionPlanUpdatedEvent(event)
 	case "subscriptionPlan.deleted":
 		c.handleSubscriptionPlanDeletedEvent(event)
+	case "budget.created", "budget.updated":
+		c.handleBudgetSavedEvent(event)
+	case "budget.deleted":
+		c.handleBudgetDeletedEvent(event)
 	case "mcpproxy.deployed":
 		c.handleMCPProxyDeploymentEvent(event)
 	case "mcpproxy.undeployed":
