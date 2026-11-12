@@ -103,6 +103,21 @@ CREATE TABLE IF NOT EXISTS graphql_apis (
     FOREIGN KEY(gateway_id, uuid) REFERENCES artifacts(gateway_id, uuid) ON DELETE CASCADE
 );
 
+-- Budgets (spend limits on LLM traffic). Like every other kind, a budget is an
+-- artifacts row (kind 'Budget') plus this per-kind table holding the Budget kind
+-- as JSON, so the shared artifact paths apply: control-plane sync, push-up of
+-- gateway_api budgets (cp_sync_status) and deletion. The artifacts row stores
+-- the budget handle as display_name too: display names need not be unique, but
+-- artifacts is UNIQUE(gateway_id, kind, display_name, version). Active or
+-- inactive is spec.status inside configuration. Spend is never stored here.
+CREATE TABLE IF NOT EXISTS budgets (
+    uuid TEXT NOT NULL,
+    gateway_id TEXT NOT NULL,
+    configuration TEXT NOT NULL,
+    PRIMARY KEY (gateway_id, uuid),
+    FOREIGN KEY(gateway_id, uuid) REFERENCES artifacts(gateway_id, uuid) ON DELETE CASCADE
+);
+
 -- Note: Policy definitions are no longer stored in the database.
 -- They are loaded from files at controller startup (see policies/ directory).
 -- The policy_definitions table has been removed as of schema version 3.

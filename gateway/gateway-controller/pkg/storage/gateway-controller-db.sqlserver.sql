@@ -133,6 +133,22 @@ CREATE TABLE dbo.graphql_apis (
     FOREIGN KEY(gateway_id, uuid) REFERENCES dbo.artifacts(gateway_id, uuid) ON DELETE CASCADE
 );
 
+-- Budgets (spend limits on LLM traffic). Like every other kind, a budget is an
+-- artifacts row (kind 'Budget') plus this per-kind table holding the Budget kind
+-- as JSON, so the shared artifact paths apply: control-plane sync, push-up of
+-- gateway_api budgets (cp_sync_status) and deletion. The artifacts row stores
+-- the budget handle as display_name too: display names need not be unique, but
+-- artifacts is UNIQUE(gateway_id, kind, display_name, version). Active or
+-- inactive is spec.status inside configuration. Spend is never stored here.
+IF OBJECT_ID(N'dbo.budgets', N'U') IS NULL
+CREATE TABLE dbo.budgets (
+    uuid NVARCHAR(64) NOT NULL,
+    gateway_id NVARCHAR(64) NOT NULL,
+    configuration NVARCHAR(MAX) NOT NULL,
+    PRIMARY KEY (gateway_id, uuid),
+    FOREIGN KEY(gateway_id, uuid) REFERENCES dbo.artifacts(gateway_id, uuid) ON DELETE CASCADE
+);
+
 -- Table for custom TLS certificates
 IF OBJECT_ID(N'dbo.certificates', N'U') IS NULL
 CREATE TABLE dbo.certificates (
