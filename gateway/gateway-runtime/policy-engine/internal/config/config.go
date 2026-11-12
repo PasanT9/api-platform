@@ -609,6 +609,8 @@ type PolicyEngine struct {
 	// instance via PolicyMetadata.SharedHTTPClient — see HTTPClientConfig's doc
 	// comment for the full rationale.
 	HTTPClient HTTPClientConfig `koanf:"http_client"`
+	// Budgets configures budget spend tracking ([policy_engine.budgets]).
+	Budgets BudgetsConfig `koanf:"budgets"`
 	// Tracing holds OpenTelemetry exporter configuration
 	TracingServiceName string `koanf:"tracing_service_name"`
 
@@ -1314,6 +1316,7 @@ func defaultConfig() *Config {
 				Enabled: false,
 				Port:    9003,
 			},
+			Budgets: defaultBudgetsConfig(),
 			ConfigMode: ConfigModeConfig{
 				Mode: "xds",
 			},
@@ -1458,6 +1461,10 @@ func defaultConfig() *Config {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	if err := c.PolicyEngine.Budgets.Redis.validate(); err != nil {
+		return err
+	}
+
 	// Validate policy engine connection mode
 	switch c.PolicyEngine.Server.Mode {
 	case "uds", "":

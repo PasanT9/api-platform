@@ -38,18 +38,35 @@ import (
 )
 
 // Spend tracking keeps each allowance's spend for the current period in this
-// process's memory. It is exact for a single policy-engine instance; replicas keep
-// separate counters, and a restart starts every period from zero. Both are accepted
-// for this version. The spendStore interface is where a shared backend (Redis, or
-// control-plane aggregation) plugs in later without touching matching or admission.
+// process's memory. On its own it is exact for a single policy-engine instance;
+// replicas keep separate counters, and a restart starts every period from zero.
+// When Redis is configured ([policy_engine.budgets.redis]), the local counters are
+// kept in step with shared ones in Redis (see budget_redis.go); matching,
+// admission and charging are unchanged.
 
 // spendStore holds spend in nano-USD per allowance-period key.
 type spendStore interface {
 	Spent(key string) int64
 	// Add adds nanos and returns the spend before and after the addition.
 	Add(key string, nanos int64) (before, after int64)
+	// AddAll adds nanos to every charge's allowance in one step, so either every
+	// allowance is charged or none is, and returns one result per charge, in order.
+	AddAll(nanos int64, charges []spendCharge) []spendResult
 	// WithPrefix returns every key that starts with prefix and its spend.
 	WithPrefix(prefix string) map[string]int64
+}
+
+// spendCharge is one allowance a request's cost is added to.
+type spendCharge struct {
+	Key   string
+	Limit int64 // nano-USD; 0 means the allowance has no limit to exhaust
+}
+
+// spendResult is an allowance's spend around one charge.
+type spendResult struct {
+	Before, After int64
+	// Exhausted reports that After reached the charge's limit.
+	Exhausted bool
 }
 
 type memorySpendStore struct {
@@ -70,6 +87,21 @@ func (s *memorySpendStore) Spent(key string) int64 {
 func (s *memorySpendStore) Add(key string, nanos int64) (int64, int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.addLocked(key, nanos)
+}
+
+func (s *memorySpendStore) AddAll(nanos int64, charges []spendCharge) []spendResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	results := make([]spendResult, len(charges))
+	for i, c := range charges {
+		before, after := s.addLocked(c.Key, nanos)
+		results[i] = spendResult{Before: before, After: after, Exhausted: c.Limit > 0 && after >= c.Limit}
+	}
+	return results
+}
+
+func (s *memorySpendStore) addLocked(key string, nanos int64) (int64, int64) {
 	before := s.spends[key]
 	after := before
 	if nanos > 0 {
@@ -95,7 +127,36 @@ func (s *memorySpendStore) WithPrefix(prefix string) map[string]int64 {
 	return out
 }
 
+// raiseTo sets key's spend to spent if that is higher than what is held.
+func (s *memorySpendStore) raiseTo(key string, spent int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if spent > s.spends[key] {
+		s.spends[key] = spent
+	}
+}
+
 var budgetSpend spendStore = newMemorySpendStore()
+
+// budgetRefuseWhenStale, when above zero, makes admission refuse requests that a
+// block budget covers once shared spend has been unavailable for this long
+// ([policy_engine.budgets.redis] on_unavailable = "refuse"). Zero keeps admitting
+// from local counts.
+var budgetRefuseWhenStale time.Duration
+
+// spendAvailability is implemented by spend stores that can lose their shared state.
+type spendAvailability interface {
+	unavailableFor() time.Duration
+}
+
+// budgetStateStale reports whether admission must treat spend as unknown.
+func budgetStateStale() bool {
+	if budgetRefuseWhenStale <= 0 {
+		return false
+	}
+	store, ok := budgetSpend.(spendAvailability)
+	return ok && store.unavailableFor() >= budgetRefuseWhenStale
+}
 
 // nowUTC is replaceable in tests.
 var nowUTC = func() time.Time { return time.Now().UTC() }
@@ -186,6 +247,17 @@ func (ec *PolicyExecutionContext) checkBudgetAdmission() []budgetBlock {
 // current phase's policies produced, kept on the refusal so the request stays
 // visible in traffic analytics.
 func (ec *PolicyExecutionContext) enforceBudgets(phaseAnalytics map[string]any) *extprocv3.ProcessingResponse {
+	if stale := ec.staleBlockBudgets(); len(stale) > 0 {
+		ec.budgetBlocked = stale
+		ec.budgetStateUnavailable = true
+		body, _ := json.Marshal(map[string]any{
+			"code":    "BUDGET_STATE_UNAVAILABLE",
+			"message": "Budget spend cannot be checked right now, so requests covered by these budgets are refused. Retry shortly.",
+			"budgets": stale,
+		})
+		slog.Warn("Request refused: shared budget spend is unavailable", "budgets", len(stale))
+		return ec.budgetRefusal(typev3.StatusCode_ServiceUnavailable, nil, body, phaseAnalytics)
+	}
 	blocks := ec.checkBudgetAdmission()
 	if len(blocks) == 0 {
 		return nil
@@ -208,16 +280,49 @@ func (ec *PolicyExecutionContext) enforceBudgets(phaseAnalytics map[string]any) 
 		"budgets": blocks,
 	})
 	slog.Info("Request refused by budget", "budgets", len(blocks), "retry_after_seconds", retryAfter)
+	retry := &corev3.HeaderValueOption{Header: &corev3.HeaderValue{Key: "retry-after", RawValue: []byte(strconv.FormatInt(retryAfter, 10))}}
+	return ec.budgetRefusal(typev3.StatusCode_TooManyRequests, retry, body, phaseAnalytics)
+}
 
+// staleBlockBudgets returns the block budgets covering the request when shared
+// spend is unavailable and the gateway is configured to refuse then.
+func (ec *PolicyExecutionContext) staleBlockBudgets() []budgetBlock {
+	if ec == nil || len(ec.budgetMatches) == 0 || !budgetStateStale() {
+		return nil
+	}
+	now := nowUTC()
+	var blocks []budgetBlock
+	seen := map[string]bool{}
+	for _, m := range ec.budgetMatches {
+		if m.Action != "block" || seen[m.BudgetUUID] {
+			continue
+		}
+		seen[m.BudgetUUID] = true
+		_, reset := budgetPeriod(m.Period, now)
+		blocks = append(blocks, budgetBlock{
+			Handle: m.Handle, Limit: m.Amount, Currency: "USD", Period: m.Period,
+			ResetsAt: reset.Format(time.RFC3339), reset: reset,
+		})
+	}
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Handle < blocks[j].Handle })
+	return blocks
+}
+
+// budgetRefusal builds the immediate response for a refused request, keeping the
+// request visible in traffic analytics.
+func (ec *PolicyExecutionContext) budgetRefusal(status typev3.StatusCode, extra *corev3.HeaderValueOption, body []byte, phaseAnalytics map[string]any) *extprocv3.ProcessingResponse {
+	headers := []*corev3.HeaderValueOption{
+		{Header: &corev3.HeaderValue{Key: "content-type", RawValue: []byte("application/json")}},
+	}
+	if extra != nil {
+		headers = append(headers, extra)
+	}
 	response := &extprocv3.ProcessingResponse{
 		Response: &extprocv3.ProcessingResponse_ImmediateResponse{
 			ImmediateResponse: &extprocv3.ImmediateResponse{
-				Status: &typev3.HttpStatus{Code: typev3.StatusCode_TooManyRequests},
-				Headers: &extprocv3.HeaderMutation{SetHeaders: []*corev3.HeaderValueOption{
-					{Header: &corev3.HeaderValue{Key: "content-type", RawValue: []byte("application/json")}},
-					{Header: &corev3.HeaderValue{Key: "retry-after", RawValue: []byte(strconv.FormatInt(retryAfter, 10))}},
-				}},
-				Body: body,
+				Status:  &typev3.HttpStatus{Code: status},
+				Headers: &extprocv3.HeaderMutation{SetHeaders: headers},
+				Body:    body,
 			},
 		},
 	}
@@ -261,6 +366,11 @@ func (ec *PolicyExecutionContext) requestBodyPhaseFollows() bool {
 // threshold (and 100%) the request crossed. A request without a price adds
 // nothing; analytics flags it as missing_price.
 func (ec *PolicyExecutionContext) chargeBudgets(rawCost string) {
+	ec.chargeBudgetsWith(budgetSpend, rawCost)
+}
+
+// chargeBudgetsWith is chargeBudgets against a given spend store.
+func (ec *PolicyExecutionContext) chargeBudgetsWith(store spendStore, rawCost string) {
 	if ec == nil || ec.budgetCharged || len(ec.budgetMatches) == 0 || len(ec.budgetBlocked) > 0 {
 		return
 	}
@@ -273,12 +383,25 @@ func (ec *PolicyExecutionContext) chargeBudgets(rawCost string) {
 	if admitted.IsZero() {
 		admitted = nowUTC()
 	}
-	for _, m := range ec.budgetMatches {
-		start, _ := budgetPeriod(m.Period, admitted)
-		before, after := budgetSpend.Add(spendKey(m, start), nanos)
-		limit, ok := amountNanos(m.Amount)
-		if !ok || limit == 0 {
+	// Every matched allowance is charged in one step (one Redis script when Redis
+	// is configured), so a request is never charged to only some of them.
+	charges := make([]spendCharge, len(ec.budgetMatches))
+	starts := make([]time.Time, len(ec.budgetMatches))
+	for i, m := range ec.budgetMatches {
+		starts[i], _ = budgetPeriod(m.Period, admitted)
+		limit, _ := amountNanos(m.Amount)
+		charges[i] = spendCharge{Key: spendKey(m, starts[i]), Limit: limit}
+	}
+	results := store.AddAll(nanos, charges)
+	for i, m := range ec.budgetMatches {
+		start, limit := starts[i], charges[i].Limit
+		before, after := results[i].Before, results[i].After
+		if limit == 0 {
 			continue
+		}
+		if results[i].Exhausted && before < limit {
+			slog.Info("Budget allowance exhausted", "budget", m.Handle, "allowance", allowanceOrShared(m.AllowanceKey),
+				"action", m.Action, "period_start", start.Format("2006-01-02"))
 		}
 		for _, threshold := range crossingPoints(m.Thresholds) {
 			mark := limitShare(limit, threshold)

@@ -25,6 +25,9 @@ const (
 	// BudgetCrossingsMetadataKey lists "<handle>|<allowance>|<percent>" thresholds the
 	// request's cost crossed (warning thresholds and 100%).
 	BudgetCrossingsMetadataKey = "budget_crossings"
+	// BudgetStateUnavailableMetadataKey is "true" when the request was refused because
+	// shared budget spend could not be read (HTTP 503), not because a budget was used up.
+	BudgetStateUnavailableMetadataKey = "budget_state_unavailable"
 	// APIKeyIdentityMetadataKey carries the validated API key's name and owner.
 	APIKeyIdentityMetadataKey = "api_key_identity"
 	// APIKeyPropertyKey is the event property (and Moesif metadata field) for it.

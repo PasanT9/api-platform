@@ -417,6 +417,9 @@ func buildAnalyticsStruct(analyticsData map[string]any, execCtx *PolicyExecution
 			encoded, _ := json.Marshal(handles)
 			fields[analytics.BudgetBlockedMetadataKey] = structpb.NewStringValue(string(encoded))
 		}
+		if execCtx.budgetStateUnavailable {
+			fields[analytics.BudgetStateUnavailableMetadataKey] = structpb.NewStringValue("true")
+		}
 		if len(execCtx.budgetCrossings) > 0 {
 			encoded, _ := json.Marshal(execCtx.budgetCrossings)
 			fields[analytics.BudgetCrossingsMetadataKey] = structpb.NewStringValue(string(encoded))

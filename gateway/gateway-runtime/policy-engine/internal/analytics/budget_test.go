@@ -27,12 +27,12 @@ func TestBudgetRequestMetadata(t *testing.T) {
 
 func TestAddBudgetOutcome(t *testing.T) {
 	result := budgetRequestMetadata("", "", "", false)
-	addBudgetOutcome(result, `["team-monthly","agent-daily"]`, `["agent-daily|shared|100"]`)
+	addBudgetOutcome(result, `["team-monthly","agent-daily"]`, `["agent-daily|shared|100"]`, "")
 	require.Equal(t, []string{"agent-daily", "team-monthly"}, result["blockedBy"])
 	require.Equal(t, []string{"agent-daily|shared|100"}, result["thresholdsCrossed"])
 
 	quiet := budgetRequestMetadata("", "", "", false)
-	addBudgetOutcome(quiet, "", "not json")
+	addBudgetOutcome(quiet, "", "not json", "")
 	_, blocked := quiet["blockedBy"]
 	_, crossed := quiet["thresholdsCrossed"]
 	require.False(t, blocked, "absent unless a budget refused the request")

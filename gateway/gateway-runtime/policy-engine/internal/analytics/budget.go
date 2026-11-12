@@ -73,10 +73,15 @@ func budgetRequestMetadata(rawMatches, rawCost, costStatus string, hasUsage bool
 // addBudgetOutcome adds what enforcement did, only when it did something:
 //
 //   - blockedBy: handles of the budgets that refused the request (HTTP 429).
+//   - stateUnavailable: true when blockedBy is because shared spend could not be
+//     read (HTTP 503), not because the budgets were used up.
 //   - thresholdsCrossed: "<handle>|<allowance>|<percent>" for every warning threshold
 //     (and 100%, exhausted) this request's cost crossed. Alerting and notifications
 //     key on this; it appears on exactly one request per crossing.
-func addBudgetOutcome(result map[string]any, rawBlocked, rawCrossings string) {
+func addBudgetOutcome(result map[string]any, rawBlocked, rawCrossings, rawStateUnavailable string) {
+	if rawStateUnavailable == "true" {
+		result["stateUnavailable"] = true
+	}
 	for field, raw := range map[string]string{"blockedBy": rawBlocked, "thresholdsCrossed": rawCrossings} {
 		if raw == "" {
 			continue

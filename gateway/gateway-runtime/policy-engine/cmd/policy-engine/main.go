@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -159,6 +160,22 @@ func main() {
 		os.Exit(1)
 	}
 	defer tracingShutdown()
+
+	// Share budget spend between gateways when Redis is configured. Without it,
+	// every gateway tracks spend in its own memory.
+	if r := cfg.PolicyEngine.Budgets.Redis; r.Enabled {
+		kernel.EnableBudgetRedis(ctx, kernel.BudgetRedisOptions{
+			Addr:          net.JoinHostPort(r.Host, strconv.Itoa(r.Port)),
+			Username:      r.Username,
+			Password:      r.Password,
+			DB:            r.DB,
+			KeyPrefix:     r.KeyPrefix,
+			Timeout:       r.Timeout,
+			SyncInterval:  r.SyncInterval,
+			OnUnavailable: r.OnUnavailable,
+			StaleAfter:    r.StaleAfter,
+		})
+	}
 
 	// Initialize core components
 	k := kernel.NewKernel()

@@ -4,6 +4,7 @@ go 1.26.10
 
 require (
 	cel.dev/cel-go v0.33.1
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/andybalholm/brotli v1.2.7
 	github.com/envoyproxy/go-control-plane/envoy v1.40.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
@@ -31,6 +32,11 @@ require (
 )
 
 require (
+	github.com/yuin/gopher-lua v1.1.1 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
+)
+
+require (
 	cel.dev/expr v0.25.3 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -52,6 +58,7 @@ require (
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.19.2 // indirect
+	github.com/redis/go-redis/v9 v9.20.1
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect

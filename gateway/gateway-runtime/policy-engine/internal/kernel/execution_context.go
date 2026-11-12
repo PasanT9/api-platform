@@ -180,6 +180,8 @@ type PolicyExecutionContext struct {
 	budgetBlocked    []budgetBlock
 	budgetCharged    bool
 	budgetCrossings  []string
+	// budgetStateUnavailable marks a refusal made because shared spend could not be read.
+	budgetStateUnavailable bool
 
 	// defaultUpstream is this route's own compiled-in upstream (cluster name, URL, base
 	// path) — whichever slot it belongs to. Always present; surfaced to policies via the

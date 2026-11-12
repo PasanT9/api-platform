@@ -1,0 +1,336 @@
+# Budgets — public platform-api contract (fragment to merge into platform-api/resources/openapi.yaml)
+# Conventions follow subscription plans (openapi.yaml:6497-6658): base /api/v0.9, org from JWT,
+# kebab-case paths, camelCase fields, PascalCase operationIds, shared error responses.
+# Revised 2026-10-09: definitions only. The API Platform keeps no spend (it lives only in the gateways'
+# shared Redis), so currentPeriod, perValueSummary, the state filter and GET /budgets/{budgetId}/values
+# are removed. Usage is analysed in Insights / Moesif.
+# Revised 2026-10-14: scope (type/claim/value/perValue) replaced by context (organization | project) and
+# owners[] (dimension, claimName, value or each), all ANDed. No limit on the number of owners in v1.
+# Revised 2026-10-14 (later): MODEL owner dimension; most specific wins (read-only overrides / overriddenBy,
+# and a warnings entry on create/update when the budget overrides another).
+# Revised 2026-10-14 (multi-value owners): owners[].value replaced by owners[].values (one or more, any of which
+# matches; listed values share one counter); response displayName replaced by displayNames aligned with values.
+openapi: 3.1.1
+info:
+  title: Budgets (fragment)
+  version: v0.9
+servers:
+  - url: https://localhost:9243/api/v0.9
+tags:
+  - name: Budgets
+paths:
+  /budgets:
+    get:
+      operationId: ListBudgets
+      tags: [Budgets]
+      summary: List budget definitions in the organization (no spend — see Insights / Moesif)
+      security:
+        - OAuth2Security: ["ap:budget:read", "ap:budget:manage"]
+      parameters:
+        - $ref: '#/components/parameters/limit-Q'
+        - $ref: '#/components/parameters/offset-Q'
+        - $ref: '#/components/parameters/query-Q'
+        - name: project
+          in: query
+          description: >-
+            Project handle. Returns only budgets created in that project (project mode). Omit in org mode to list
+            all budgets of the organization (org- and project-context).
+          schema: { type: string }
+        - name: contextType
+          in: query
+          schema: { type: string, enum: [ORGANIZATION, PROJECT] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [ACTIVE, DISABLED] }
+        - name: enforcementMode
+          in: query
+          schema: { type: string, enum: [ENFORCE, MONITOR] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: CreateBudget
+      tags: [Budgets]
+      summary: Create a budget
+      security:
+        - OAuth2Security: ["ap:budget:manage"]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBudgetRequest' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Budget' }
+        '400': { $ref: '#/components/responses/BadRequest' }   # BUDGET_INVALID_OWNER, BUDGET_OWNER_DUPLICATE, BUDGET_OWNER_NOT_ALLOWED, BUDGET_OWNER_NOT_FOUND, ...
+        '409': { $ref: '#/components/responses/Conflict' }     # BUDGET_ALREADY_EXISTS (same context + owners + period)
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /budgets/{budgetId}:
+    parameters:
+      - name: budgetId
+        in: path
+        required: true
+        description: Budget handle
+        schema: { type: string }
+    get:
+      operationId: GetBudget
+      tags: [Budgets]
+      security:
+        - OAuth2Security: ["ap:budget:read", "ap:budget:manage"]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Budget' }
+        '404': { $ref: '#/components/responses/NotFound' }     # BUDGET_NOT_FOUND
+    put:
+      operationId: UpdateBudget
+      tags: [Budgets]
+      summary: Update mutable fields (name, description, amount, thresholds, mode, status). The context, the owners and the period are immutable.
+      security:
+        - OAuth2Security: ["ap:budget:manage"]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateBudgetRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Budget' }
+        '400': { $ref: '#/components/responses/BadRequest' }   # BUDGET_IMMUTABLE_FIELD
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: DeleteBudget
+      tags: [Budgets]
+      summary: Delete a budget. Enforcement stops within seconds on every gateway; its Redis counters expire on their own after the period ends (past spend remains in Moesif).
+      security:
+        - OAuth2Security: ["ap:budget:manage"]
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    BudgetContext:
+      type: object
+      description: >-
+        The first owner, fixed by the AI Workspace mode the budget is created in. Immutable.
+      required: [type]
+      properties:
+        type: { type: string, enum: [ORGANIZATION, PROJECT] }
+        project:
+          type: string
+          description: Project handle; required when type is PROJECT, omitted for ORGANIZATION.
+        displayName:
+          type: string
+          readOnly: true
+          description: Response only — the project's display name; absent for ORGANIZATION.
+      examples:
+        - { type: ORGANIZATION }
+        - { type: PROJECT, project: search }
+
+    BudgetOwnerDimension:
+      type: string
+      description: >-
+        PROJECT is allowed only when the context is ORGANIZATION. MODEL matches the upstream model id the gateway
+        sends to the provider (after any proxy model rewrite), exactly and case-sensitively.
+      enum: [PROJECT, LLM_PROVIDER, LLM_PROXY, MODEL, APPLICATION, CLAIM]
+
+    BudgetOwner:
+      type: object
+      description: >-
+        An appended owner. A request counts toward the budget only when it matches every owner (AND). Exactly one
+        of values or each. A request matches a values owner when its value is any of the listed values (OR); listed
+        values share one allowance. Each dimension may appear once per budget; CLAIM once per claimName.
+      required: [dimension]
+      properties:
+        dimension: { $ref: '#/components/schemas/BudgetOwnerDimension' }
+        claimName:
+          type: string
+          description: CLAIM only — e.g. sub, team, department, cost_centre.
+          pattern: '^[A-Za-z0-9_.:-]{1,255}$'
+        values:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+          description: >-
+            One or more handles of projects / LLM providers / LLM proxies / applications, model ids (MODEL; each
+            1–255 characters, no control characters, not checked against the model catalog), or claim values. Any
+            listed value matches; all listed values share one allowance. No limit on the number of values in v1.
+            Stored and returned sorted.
+        each:
+          type: boolean
+          default: false
+          description: >-
+            Every distinct value of this dimension gets its own allowance of `amount` (including values that appear
+            later). With several each-owners, every combination of values gets its own allowance.
+        displayNames:
+          type: array
+          items: { type: string }
+          readOnly: true
+          description: >-
+            Response only — display names of the listed projects / LLM providers / LLM proxies / applications, in the
+            same order as values (e.g. ["Anthropic", "OpenAI"]); absent for MODEL, CLAIM and each.
+      examples:
+        - { dimension: CLAIM, claimName: team, values: [search] }
+        - { dimension: CLAIM, claimName: sub, each: true }
+        - { dimension: LLM_PROVIDER, values: [openai-prod] }
+        - { dimension: LLM_PROVIDER, values: [anthropic-prod, openai-prod] }
+        - { dimension: LLM_PROXY, each: true }
+        - { dimension: MODEL, values: [gpt-4o, gpt-4o-mini] }
+        - { dimension: MODEL, each: true }
+
+    Money:
+      type: string
+      description: USD amount as a decimal string, up to 6 fractional digits.
+      pattern: '^\d{1,12}(\.\d{1,6})?$'
+      examples: ['1500.00']
+
+    CreateBudgetRequest:
+      type: object
+      required: [displayName, context, amount, period]
+      properties:
+        handle: { type: string, maxLength: 40, description: Generated from displayName if omitted }
+        displayName: { type: string, maxLength: 255 }
+        description: { type: string, maxLength: 1023 }
+        context: { $ref: '#/components/schemas/BudgetContext' }
+        owners:
+          type: array
+          description: Appended owners, in any order (stored and returned in canonical order). Empty = the whole context.
+          items: { $ref: '#/components/schemas/BudgetOwner' }
+          default: []
+          examples:
+            - [{ dimension: CLAIM, claimName: sub, values: [alice@acme.com] }, { dimension: LLM_PROVIDER, values: [openai-prod] }]
+            - [{ dimension: LLM_PROVIDER, values: [openai-prod, anthropic-prod] }]
+            - [{ dimension: CLAIM, claimName: sub, each: true }, { dimension: LLM_PROVIDER, each: true }]
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { type: string, enum: [USD], default: USD }
+        period: { type: string, enum: [DAY, WEEK, MONTH] }
+        enforcementMode: { type: string, enum: [ENFORCE, MONITOR], default: ENFORCE }
+        thresholds:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 100 }
+          maxItems: 5
+          uniqueItems: true
+          examples: [[50, 80, 100]]
+
+    UpdateBudgetRequest:
+      type: object
+      required: [displayName, amount]
+      properties:
+        displayName: { type: string, maxLength: 255 }
+        description: { type: string, maxLength: 1023 }
+        amount: { $ref: '#/components/schemas/Money' }
+        enforcementMode: { type: string, enum: [ENFORCE, MONITOR] }
+        thresholds:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 100 }
+          maxItems: 5
+          uniqueItems: true
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+          description: Setting status clears statusReason.
+
+    Budget:
+      type: object
+      description: >-
+        Budget definition only. Spend, remaining amount and per-value usage are not returned by the API Platform;
+        they are counted in the gateways' shared Redis and analysed in Moesif on the LLM Analytics page (Budget Usage card; Budget filter on metadata.budget_id = id).
+      properties:
+        id: { type: string, description: handle }
+        uuid: { type: string }
+        displayName: { type: string }
+        description: { type: string }
+        context: { $ref: '#/components/schemas/BudgetContext' }
+        owners: { type: array, items: { $ref: '#/components/schemas/BudgetOwner' } }
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { type: string, enum: [USD] }
+        period: { type: string, enum: [DAY, WEEK, MONTH] }
+        enforcementMode: { type: string, enum: [ENFORCE, MONITOR] }
+        thresholds: { type: array, items: { type: integer } }
+        status: { type: string, enum: [ACTIVE, DISABLED] }
+        statusReason:
+          type: string
+          enum: [OWNER_DELETED]
+          readOnly: true
+          description: >-
+            Why the platform set the current status; absent when an administrator set it. OWNER_DELETED — the
+            budget was disabled automatically because its context project, or a project / LLM provider / LLM proxy /
+            application named by one of its owners, was deleted. Cleared when an administrator enables or disables the budget.
+        overrides:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/BudgetRef' }
+          description: >-
+            Budgets this budget overrides (most specific wins): same context, period and owner dimensions, and this
+            budget is at least as specific on every dimension and more specific on at least one. Per dimension, a
+            values list is narrower than each, and a list is at least as narrow as another when it is a subset of it
+            (strictly narrower when a proper subset). For a request that
+            matches both, the overridden budget is skipped (not checked, not charged). Computed from definitions.
+        overriddenBy:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/BudgetRef' }
+          description: Budgets that override this one for the values they name.
+        warnings:
+          type: array
+          readOnly: true
+          description: >-
+            Create/update responses only. BUDGET_OVERRIDES_OTHER when the saved budget overrides one or more
+            budgets — e.g. a MONITOR budget for sub = alice lifts an ENFORCE sub = each budget for alice.
+          items:
+            type: object
+            properties:
+              code: { type: string, enum: [BUDGET_OVERRIDES_OTHER] }
+              message: { type: string }
+              budgets: { type: array, items: { $ref: '#/components/schemas/BudgetRef' } }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+
+    BudgetRef:
+      type: object
+      readOnly: true
+      properties:
+        id: { type: string, description: handle }
+        displayName: { type: string }
+        enforcementMode: { type: string, enum: [ENFORCE, MONITOR] }
+
+    BudgetListResponse:
+      type: object
+      properties:
+        count: { type: integer }
+        list: { type: array, items: { $ref: '#/components/schemas/Budget' } }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+  # Existing shared components in openapi.yaml (referenced, not redefined):
+  #   parameters: limit-Q, offset-Q, query-Q
+  #   schemas: Pagination, Error
+  #   responses: BadRequest, Unauthorized, Forbidden, NotFound, Conflict, InternalServerError
+  # New scopes to declare under securitySchemes.OAuth2Security…scopes:
+  #   ap:budget:manage — Create, update and delete budgets
+  #   ap:budget:read   — Read budget definitions
+  # Error codes (internal/apperror): BUDGET_INVALID, BUDGET_INVALID_OWNER (values and each both/neither set, empty or duplicate values, bad claimName, bad MODEL value),
+  #   BUDGET_OWNER_DUPLICATE (dimension repeated; CLAIM repeated for one claimName), BUDGET_OWNER_NOT_ALLOWED
+  #   (PROJECT owner in a project context), BUDGET_OWNER_NOT_FOUND (unknown context project or any listed owner value, or a
+  #   project-scoped resource outside the context project), BUDGET_ALREADY_EXISTS, BUDGET_IMMUTABLE_FIELD,
+  #   BUDGET_NOT_FOUND. BUDGET_INVALID_SCOPE and BUDGET_SCOPE_NOT_FOUND replaced 2026-10-14; BUDGET_NOT_PER_VALUE removed 2026-10-09.

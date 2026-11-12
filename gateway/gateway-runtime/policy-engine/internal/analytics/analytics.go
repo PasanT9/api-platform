@@ -557,7 +557,8 @@ func (c *Analytics) prepareAnalyticEvent(logEntry *v3.HTTPAccessLogEntry) *dto.E
 			keyValuePairsFromMetadata[constants.LLMCostMetadataKey],
 			keyValuePairsFromMetadata[LLMCostStatusMetadataKey], hasPrompt || hasCompletion)
 		addBudgetOutcome(budget, keyValuePairsFromMetadata[BudgetBlockedMetadataKey],
-			keyValuePairsFromMetadata[BudgetCrossingsMetadataKey])
+			keyValuePairsFromMetadata[BudgetCrossingsMetadataKey],
+			keyValuePairsFromMetadata[BudgetStateUnavailableMetadataKey])
 		event.Properties["budget"] = budget
 	}
 	// Validated API key identity, for any API kind: who called, not which budget.
